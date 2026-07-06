@@ -7,8 +7,6 @@ oadr-cpep is a python package that was built based upon the work demonstrated in
 The artifact you pass selects the phase:
 
 **Phase 1 — feature selection** (no artifact):
-```bash
-```
 
 Runs LASSO on the site's data and emits `SDY524_selected_features.csv`. The
 aggregator collects every site's selection and broadcasts back a
