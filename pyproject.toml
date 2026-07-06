@@ -1,0 +1,29 @@
+[project]
+name = "oadr-cpep"
+version = "0.1.0"
+description = "Federated prediction of residual beta-cell function (C-peptide AUC) in Type 1 Diabetes"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Anne Deslattes Mays, PhD", email = "adeslat@scitechcon.org" },
+  { name = "Richard Scheuermann, PhD", email = "richard.scheuermann@nih.gov" }
+]
+requires-python = ">=3.9"
+dependencies = [
+  "typer",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "scipy",
+  "matplotlib",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+oadr-cpep = "oadr_cpep.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

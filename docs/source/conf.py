@@ -19,13 +19,10 @@ extensions = [
 autodoc_mock_imports = [
     'numpy',
     'pandas',
-    'scanpy',
     'sklearn',
     'scipy',
-    'plotly',
-    'kaleido',
+    'matplotlib',
     'typer',
-    'mygene',
 ]
 
 autodoc_default_options = {
