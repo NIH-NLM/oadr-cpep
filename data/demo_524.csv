@@ -1,0 +1,73 @@
+accession,participant_id,study_id,sex,year_of_birth,cohort_group,race,ethnicity,condition,date_of_t1dm_diagnosis,day_0_date
+SUB146759,AbATE_106306,ITN027AI,Female,1994,hOKT3,American Indian or Alaska Native,Not Hispanic or Latino,Type 1 Diabetes,2006-08-13,2006-09-29
+SUB146789,AbATE_122083,ITN027AI,Male,1991,hOKT3,Black or African American,Not Hispanic or Latino,Type 1 Diabetes,2005-09-30,2005-11-20
+SUB146788,AbATE_137567,ITN027AI,Female,1995,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-03-13,2005-05-01
+SUB146771,AbATE_156104,ITN027AI,Male,1989,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2006-10-10,2006-12-04
+SUB146779,AbATE_161201,ITN027AI,Male,1996,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2006-08-13,2006-09-17
+SUB146755,AbATE_166103,ITN027AI,Female,1999,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-12-01,2008-01-17
+SUB146770,AbATE_184558,ITN027AI,Male,1999,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-05-20,2008-07-08
+SUB146793,AbATE_209864,ITN027AI,Male,1993,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-06-14,2005-08-11
+SUB146722,AbATE_214040,ITN027AI,Female,1997,hOKT3,American Indian or Alaska Native,Not Hispanic or Latino,Type 1 Diabetes,2007-07-23,2007-09-03
+SUB146782,AbATE_229085,ITN027AI,Male,1992,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-10-27,2007-12-22
+SUB146756,AbATE_229642,ITN027AI,Female,1997,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2006-11-29,2007-01-17
+SUB146783,AbATE_236676,ITN027AI,Male,1999,Control,White,Hispanic or Latino,Type 1 Diabetes,2007-11-22,2008-01-17
+SUB146751,AbATE_242972,ITN027AI,Male,1997,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2005-03-28,2005-05-26
+SUB146786,AbATE_255654,ITN027AI,Female,1995,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-02-21,2008-04-13
+SUB146741,AbATE_268024,ITN027AI,Male,1993,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-05-12,2007-06-22
+SUB146718,AbATE_271974,ITN027AI,Female,1999,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-09-30,2007-11-18
+SUB146797,AbATE_283344,ITN027AI,Female,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-04-17,2008-06-12
+SUB146774,AbATE_289534,ITN027AI,Male,1995,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-05-31,2007-07-19
+SUB146742,AbATE_305075,ITN027AI,Female,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2006-11-24,2007-01-19
+SUB146754,AbATE_314565,ITN027AI,Male,1989,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2005-11-20,2006-01-01
+SUB146792,AbATE_325907,ITN027AI,Male,1991,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-04-05,2007-05-28
+SUB146795,AbATE_326726,ITN027AI,Female,1994,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2006-03-21,2006-04-28
+SUB146773,AbATE_333398,ITN027AI,Female,1978,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-10-03,2005-11-28
+SUB146744,AbATE_371894,ITN027AI,Male,1993,hOKT3,Other,Hispanic or Latino,Type 1 Diabetes,2008-09-04,2008-10-28
+SUB146750,AbATE_382037,ITN027AI,Female,1999,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-04-07,2007-06-02
+SUB146768,AbATE_383953,ITN027AI,Male,2000,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-03-05,2008-04-21
+SUB146720,AbATE_397935,ITN027AI,Male,1993,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-05-25,2005-07-10
+SUB146766,AbATE_405454,ITN027AI,Female,2000,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-12-09,2008-01-28
+SUB146758,AbATE_406442,ITN027AI,Female,1992,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-06-23,2005-08-18
+SUB146777,AbATE_443762,ITN027AI,Male,1983,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2006-02-23,2006-04-19
+SUB146778,AbATE_445249,ITN027AI,Male,1993,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2006-02-16,2006-04-08
+SUB146762,AbATE_464149,ITN027AI,Female,1997,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-09-20,2007-11-09
+SUB146757,AbATE_468100,ITN027AI,Male,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-05-19,2007-06-28
+SUB146730,AbATE_475166,ITN027AI,Female,1993,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2005-06-25,2005-08-12
+SUB146747,AbATE_479125,ITN027AI,Female,1995,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-01-23,2007-03-19
+SUB146776,AbATE_493934,ITN027AI,Female,1996,hOKT3,Black or African American,Not Hispanic or Latino,Type 1 Diabetes,2005-11-11,2006-01-04
+SUB146780,AbATE_505125,ITN027AI,Male,1990,hOKT3,White,Hispanic or Latino,Type 1 Diabetes,2005-08-15,2005-09-20
+SUB146721,AbATE_537789,ITN027AI,Female,1998,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-02-21,2007-04-10
+SUB146748,AbATE_545376,ITN027AI,Female,2000,Control,White,Hispanic or Latino,Type 1 Diabetes,2008-10-31,2008-12-29
+SUB146727,AbATE_555647,ITN027AI,Male,1996,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-11-11,2007-12-27
+SUB146738,AbATE_562352,ITN027AI,Male,1998,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2008-03-20,2008-05-10
+SUB146740,AbATE_595950,ITN027AI,Female,1995,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-04-16,2007-06-05
+SUB146798,AbATE_607777,ITN027AI,Male,1997,hOKT3,Asian,Not Hispanic or Latino,Type 1 Diabetes,2007-01-18,2007-03-05
+SUB146737,AbATE_612273,ITN027AI,Male,1978,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-09-18,2007-11-10
+SUB146781,AbATE_618372,ITN027AI,Female,1978,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-10-31,2007-12-11
+SUB146796,AbATE_623229,ITN027AI,Female,1990,Control,Black or African American,Not Hispanic or Latino,Type 1 Diabetes,2005-10-25,2005-12-04
+SUB146784,AbATE_642173,ITN027AI,Male,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-11-30,2009-01-24
+SUB146723,AbATE_652711,ITN027AI,Male,1999,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-10-11,2008-12-05
+SUB146787,AbATE_666079,ITN027AI,Male,1989,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-03-13,2005-04-10
+SUB146760,AbATE_676063,ITN027AI,Female,1994,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-10-10,2008-12-04
+SUB146725,AbATE_678610,ITN027AI,Female,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-11-26,2008-01-09
+SUB146745,AbATE_689968,ITN027AI,Female,1981,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2006-09-29,2006-11-10
+SUB146732,AbATE_692210,ITN027AI,Female,1993,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-12-25,2008-02-26
+SUB146739,AbATE_693516,ITN027AI,Male,1990,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-08-30,2005-10-13
+SUB146719,AbATE_707274,ITN027AI,Male,1999,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2008-06-25,2008-07-24
+SUB146764,AbATE_707556,ITN027AI,Male,1990,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-07-11,2007-09-05
+SUB146761,AbATE_738493,ITN027AI,Female,1997,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-06-27,2008-08-17
+SUB146726,AbATE_751245,ITN027AI,Male,2000,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-04-14,2008-06-09
+SUB146767,AbATE_757437,ITN027AI,Male,1999,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2007-09-09,2007-10-31
+SUB146729,AbATE_759757,ITN027AI,Male,1999,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-11-11,2007-12-24
+SUB146733,AbATE_768498,ITN027AI,Male,1997,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-06-24,2008-08-10
+SUB146728,AbATE_770569,ITN027AI,Male,1990,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-06-23,2007-08-15
+SUB146724,AbATE_781179,ITN027AI,Male,1996,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2006-11-17,2007-01-03
+SUB146769,AbATE_785228,ITN027AI,Female,1996,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-12-13,2008-01-27
+SUB146794,AbATE_788532,ITN027AI,Male,1996,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-07-28,2008-09-22
+SUB146791,AbATE_800847,ITN027AI,Male,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-02-15,2008-04-10
+SUB146743,AbATE_838213,ITN027AI,Male,1994,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2007-03-06,2007-04-18
+SUB146772,AbATE_853089,ITN027AI,Male,1991,Control,White,Not Hispanic or Latino,Type 1 Diabetes,2005-07-12,2005-08-24
+SUB146752,AbATE_856834,ITN027AI,Male,2000,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-12-04,2009-01-29
+SUB146736,AbATE_869009,ITN027AI,Male,1998,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2006-11-26,2007-01-15
+SUB146734,AbATE_921524,ITN027AI,Female,1991,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2008-01-11,2008-03-02
+SUB146749,AbATE_961133,ITN027AI,Female,1994,hOKT3,White,Not Hispanic or Latino,Type 1 Diabetes,2005-04-03,2005-05-22

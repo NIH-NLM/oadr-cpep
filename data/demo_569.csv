@@ -1,0 +1,11 @@
+accession,participant_id,study_id,sex,year_of_birth,cohort_group,race,ethnicity,condition,date_of_t1dm_diagnosis,day_0_date
+SUB151307,ITN007AI_195962,NDB01,Female,1992,2,White,Not Hispanic or Latino,Type 1 Diabetes,2002-06-21,2002-06-21
+SUB151308,ITN007AI_260733,NDB01,Male,1977,2,White,Not Hispanic or Latino,Type 1 Diabetes,2001-07-29,2001-07-29
+SUB151309,ITN007AI_303504,NDB01,Male,1991,1,White,Not Hispanic or Latino,Type 1 Diabetes,2001-12-29,2001-12-29
+SUB151310,ITN007AI_354273,NDB01,Male,1992,2,White,Not Hispanic or Latino,Type 1 Diabetes,2002-04-20,2002-04-20
+SUB151312,ITN007AI_415808,NDB01,Male,1987,2,White,Not Hispanic or Latino,Type 1 Diabetes,2002-03-27,2002-03-27
+SUB151313,ITN007AI_417544,NDB01,Male,1977,2,White,Not Hispanic or Latino,Type 1 Diabetes,2001-12-16,2001-12-16
+SUB151314,ITN007AI_552163,NDB01,Male,1992,1,White,Not Hispanic or Latino,Type 1 Diabetes,2002-06-30,2002-06-30
+SUB151315,ITN007AI_709370,NDB01,Female,1977,2,White,Not Hispanic or Latino,Type 1 Diabetes,2001-10-01,2001-10-01
+SUB151316,ITN007AI_902009,NDB01,Female,1992,1,White,Not Hispanic or Latino,Type 1 Diabetes,2002-06-24,2002-06-24
+SUB151317,ITN007AI_960474,NDB01,Male,1991,1,White,Not Hispanic or Latino,Type 1 Diabetes,2001-09-13,2001-09-13

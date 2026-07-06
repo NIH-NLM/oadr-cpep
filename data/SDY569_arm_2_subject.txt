@@ -1,0 +1,12 @@
+ARM_ACCESSION	SUBJECT_ACCESSION	AGE_EVENT	AGE_EVENT_SPECIFY	AGE_UNIT	MAX_SUBJECT_AGE	MIN_SUBJECT_AGE	SUBJECT_PHENOTYPE	SUBJECT_LOCATION	MAX_SUBJECT_AGE_IN_YEARS	MIN_SUBJECT_AGE_IN_YEARS
+ARM2707	SUB151307	Age at initial treatment		Years	7	7			7	7
+ARM2707	SUB151308	Age at initial treatment		Years	18	18			18	18
+ARM2707	SUB151310	Age at initial treatment		Years	7	7			7	7
+ARM2707	SUB151312	Age at initial treatment		Years	13	13			13	13
+ARM2707	SUB151313	Age at initial treatment		Years	18	18			18	18
+ARM2707	SUB151315	Age at initial treatment		Years	18	18			18	18
+ARM2708	SUB151309	Age at initial treatment		Years	7	7			7	7
+ARM2708	SUB151311	Age at initial treatment		Years	0	0			0	0
+ARM2708	SUB151314	Age at initial treatment		Years	7	7			7	7
+ARM2708	SUB151316	Age at initial treatment		Years	7	7			7	7
+ARM2708	SUB151317	Age at initial treatment		Years	7	7			7	7

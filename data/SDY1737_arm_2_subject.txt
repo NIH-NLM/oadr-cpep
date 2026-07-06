@@ -1,0 +1,17 @@
+ARM_ACCESSION	SUBJECT_ACCESSION	AGE_EVENT	AGE_EVENT_SPECIFY	AGE_UNIT	MAX_SUBJECT_AGE	MIN_SUBJECT_AGE	SUBJECT_PHENOTYPE	SUBJECT_LOCATION	MAX_SUBJECT_AGE_IN_YEARS	MIN_SUBJECT_AGE_IN_YEARS
+ARM5572	SUB228868	Age at enrollment		Years	16	16		United States of America	16	16
+ARM5572	SUB228871	Age at enrollment		Years	16	16		United States of America	16	16
+ARM5572	SUB228875	Age at enrollment		Years	19	19		United States of America	19	19
+ARM5572	SUB228876	Age at enrollment		Years	33	33		United States of America	33	33
+ARM5572	SUB228879	Age at enrollment		Years	17	17		United States of America	17	17
+ARM5572	SUB228880	Age at enrollment		Years	18	18		United States of America	18	18
+ARM5572	SUB228881	Age at enrollment		Years	23	23		United States of America	23	23
+ARM5572	SUB228883	Age at enrollment		Years	23	23		United States of America	23	23
+ARM5573	SUB228869	Age at enrollment		Years	9	9		United States of America	9	9
+ARM5573	SUB228870	Age at enrollment		Years	11	11		United States of America	11	11
+ARM5573	SUB228872	Age at enrollment		Years	9	9		United States of America	9	9
+ARM5573	SUB228873	Age at enrollment		Years	13	13		United States of America	13	13
+ARM5573	SUB228874	Age at enrollment		Years	13	13		United States of America	13	13
+ARM5573	SUB228877	Age at enrollment		Years	12	12		United States of America	12	12
+ARM5573	SUB228878	Age at enrollment		Years	13	13		United States of America	13	13
+ARM5573	SUB228882	Age at enrollment		Years	8	8		United States of America	8	8

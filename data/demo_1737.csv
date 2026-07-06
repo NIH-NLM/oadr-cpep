@@ -1,0 +1,17 @@
+accession,participant_id,study_id,sex,year_of_birth,cohort_group,race,ethnicity,condition,date_of_t1dm_diagnosis,day_0_date
+SUB228868,RETAIN_135342,ITN041AI,Female,1994,Adult,White,Not Hispanic or Latino,Type 1 Diabetes,2010-03-31,2010-05-04
+SUB228869,RETAIN_143437,ITN041AI,Female,2002,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2010-11-18,2011-02-23
+SUB228870,RETAIN_168164,ITN041AI,Male,2000,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2010-12-20,2011-03-08
+SUB228871,RETAIN_192151,ITN041AI,Male,1995,Adult,Black or African American,Not Hispanic or Latino,Type 1 Diabetes,2010-10-10,2011-01-14
+SUB228872,RETAIN_215465,ITN041AI,Female,2002,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2010-10-02,2011-01-04
+SUB228873,RETAIN_300339,ITN041AI,Male,1997,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2010-09-18,2010-10-13
+SUB228874,RETAIN_350507,ITN041AI,Male,1997,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2010-05-28,2010-07-12
+SUB228875,RETAIN_465679,ITN041AI,Male,1991,Adult,White,Not Hispanic or Latino,Type 1 Diabetes,2010-04-27,2010-06-26
+SUB228876,RETAIN_511474,ITN041AI,Male,1977,Adult,White,Not Hispanic or Latino,Type 1 Diabetes,2010-09-04,2010-10-03
+SUB228877,RETAIN_516891,ITN041AI,Male,1999,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2011-04-30,2011-06-26
+SUB228878,RETAIN_615116,ITN041AI,Male,1997,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2010-09-10,2010-12-18
+SUB228879,RETAIN_703798,ITN041AI,Female,1993,Adult,White,Not Hispanic or Latino,Type 1 Diabetes,2009-12-18,2010-03-27
+SUB228880,RETAIN_731341,ITN041AI,Male,1992,Adult,White,Not Hispanic or Latino,Type 1 Diabetes,2010-06-09,2010-09-19
+SUB228881,RETAIN_775379,ITN041AI,Male,1987,Adult,White,Not Hispanic or Latino,Type 1 Diabetes,2010-08-10,2010-10-02
+SUB228882,RETAIN_820343,ITN041AI,Female,2003,Pediatric,White,Not Hispanic or Latino,Type 1 Diabetes,2011-03-08,2011-03-28
+SUB228883,RETAIN_859067,ITN041AI,Female,1988,Adult,White,Unknown,Type 1 Diabetes,2010-12-14,2011-03-15

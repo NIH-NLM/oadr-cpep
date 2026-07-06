@@ -1,0 +1,3 @@
+ARM_ACCESSION	DESCRIPTION	NAME	STUDY_ACCESSION	TYPE_REPORTED	TYPE_PREFERRED	WORKSPACE_ID
+ARM3163	Weekly intramuscular injections of a placebo saline solution of equal volume to the alefacept group for 2 cycles of 12 weeks each, separated by a 12 week pause in treatment.	Placebo Comparator: Placebo	SDY797			4117
+ARM3164	Weekly intramuscular injections of alefacept (15 mg) for 2 cycles of 12 weeks each, separated by a 12 week pause in treatment.	Experimental: Alefacept	SDY797			4117
