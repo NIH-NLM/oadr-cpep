@@ -1,33 +1,47 @@
-# File: container/oadr-cpep/Dockerfile
-# Self-contained image for the per-site oadr-cpep-cli (select-features,
-# fit-models). Build once, publish to a registry, reference from the site
-# workflow's nextflow.config. The aggregator step has its own image.
-
 FROM mambaorg/micromamba:1.5.6
 
 LABEL maintainer="nih-nlm"
-LABEL org.opencontainers.image.title="oadr-cpep-cli"
-LABEL org.opencontainers.image.description="Per-site federated prediction of residual beta-cell function"
 
 USER root:root
+
 RUN apt-get update && \
-    apt-get install -y procps && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    apt-get install -y git procps chromium && \
+    apt-get install -y --no-install-recommends build-essential gcc g++ gfortran && \
+    apt-get clean
 
 WORKDIR /app
-COPY context/oadr-cpep.yml /app/env.yml
-RUN chown -R mambauser:mambauser /app
+
+# Clone repository
+RUN git clone https://github.com/NIH-NLM/oadr-cpep.git && \
+    chown -R mambauser:mambauser /app/oadr-cpep
 
 USER mambauser:mambauser
+
 ENV MAMBA_ROOT_PREFIX=/opt/conda \
     PATH=/opt/conda/bin:$PATH \
     DEBIAN_FRONTEND=noninteractive
 
-RUN micromamba install -y -n base -f /app/env.yml && \
+# Install Python with channels specified
+RUN micromamba install -y -n base -c conda-forge python=3.10 pip && \
     micromamba clean --all --yes
 
-COPY context/setup.py /app/setup.py
-COPY context/src /app/src
-RUN python -m pip install --no-cache-dir /app
+# Install all packages via pip
+WORKDIR /app/oadr-cpep
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    python -m pip install --no-cache-dir \
+        numpy==1.24.3 \
+        pandas==2.1.4 \
+        scipy==1.11.4 \
+        scikit-learn \
+        scanpy==1.9.6 \
+        anndata==0.9.2 \
+        plotly==5.22.0 \
+        kaleido==0.2.1 \
+        matplotlib==3.8.0 \
+        typer \
+        mygene && \
+    python -m pip install --no-cache-dir .
 
-CMD ["oadr-cpep-cli", "--help"]
+ENV PYTHONPATH="/app/oadr-cpep/src"
+
+CMD ["oadr-cpep", "--help"]

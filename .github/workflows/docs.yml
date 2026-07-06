@@ -1,0 +1,82 @@
+name: Build and Deploy Sphinx Documentation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install sphinx myst-parser sphinx-rtd-theme
+
+      - name: Ensure docs directories exist
+        run: |
+          mkdir -p docs/source/_static docs/source/_templates
+
+      - name: Generate API documentation
+        run: |
+          sphinx-apidoc -f --separate -o docs/source/ src/scsilhouette
+
+      - name: Build HTML docs
+        run: |
+          cd docs && make html
+
+      - name: Verify build succeeded
+        run: |
+          if [ ! -f docs/build/html/index.html ]; then
+            echo "ERROR: Build failed - index.html not found"
+            exit 1
+          fi
+          echo "✓ Build succeeded - index.html exists"
+
+      - name: Create .nojekyll file
+        run: |
+          touch docs/build/html/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs/build/html'
+
+  deploy:
+    needs: build
+    
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
