@@ -1,72 +1,102 @@
 # oadr-cpep
 
-oadr-cpep is a python package that was built based upon the work demonstrated in [oadr-autoantibody](https://github.com/NIH-NLM/oadr-autoantibody/tree/main/ipynb)
+`oadr-cpep` is a Python package for **federated prediction of residual beta-cell
+function** (C-peptide AUC) in Type 1 Diabetes. It packages the methods
+demonstrated in the
+[oadr-autoantibody](https://github.com/NIH-NLM/oadr-autoantibody/tree/main/ipynb)
+notebooks into one `typer` CLI, used by two Nextflow workflows —
+[oadr-cpep-fed-predict-site-nf](https://github.com/NIH-NLM/oadr-cpep-fed-predict-site-nf)
+(per institution) and
+[oadr-cpep-fed-predict-aggregator-nf](https://github.com/NIH-NLM/oadr-cpep-fed-predict-aggregator-nf)
+(coordinator).
 
-## Three phases (one reusable workflow)
+Only model parameters (feature lists, coefficient vectors, trained forests) and
+scalar performance summaries ever cross the site boundary — never subject-level
+data.
 
-The artifact you pass selects the phase:
+## Install
 
-**Phase 1 — feature selection** (no artifact):
-
-Runs LASSO on the site's data and emits `SDY524_selected_features.csv`. The
-aggregator collects every site's selection and broadcasts back a
-`consensus_features.csv`.
-
-**Phase 2 — fit on consensus features** (`--consensus_features`):
 ```bash
-```
-Fits Ridge, LASSO, and Random Forest on the consensus features — LASSO
-selection is not repeated — and emits `SDY524_ridge_vector.csv`,
-`SDY524_lasso_vector.csv`, and `SDY524_rf.pkl`. These go to the aggregator.
-
-**Phase 3 — incorporate the federated coefficients** (`--federated_coefficients`):
-```bash
+pip install -e .
+oadr-cpep --help
 ```
 
-Takes the aggregator's central FedAvg vector and evaluates it from this site's
-own view — a 5-fold CV comparing the site's **solo** model against the
-**federated** model, with bootstrap 95% CIs on R² and an observed-vs-predicted
-scatter. The central vector is applied **as-is**: it already includes this
-site's contribution, so it is not re-blended with the site's own coefficients
-(that would double-count this site). Emits
-`SDY524_ridge_federated_performance.csv` (solo/federated R² + CIs, meant to
-leave the site), `SDY524_ridge_federated_predictions.csv` (subject-level, kept
-local), and `SDY524_ridge_federated.{png,pdf}`.
+## Commands
 
-The method (`ridge`/`lasso`) is read from the vector; Random Forest is deferred
-(its federated form — union of forests — is an aggregator method).
+One CLI (`oadr-cpep`) provides both the per-site and coordinator steps:
 
-## Input data
+| Command | Role | Does |
+|---|---|---|
+| `select-features` | site · Phase 1 | LASSO selects features on the site's own data |
+| `fit-models` | site · Phase 2 | Ridge / LASSO / Random Forest on the consensus features |
+| `apply-coefficients` | site · Phase 3 | incorporate the central federated vector — solo-vs-federated 5-fold CV, bootstrap 95% CI, scatter |
+| `consensus-features` | aggregator · Phase 1 | tally site selections into a consensus feature set |
+| `aggregate-vectors` | aggregator · Phase 2 | combine site vectors (FedAvg / median / mean) + union of forests |
 
-The workflow reads the **same ImmPort-derived files** the oadr-autoantibody
-notebooks use (via the embedded `oadr_data` loader) — you do not pre-build a
-CSV. `--data_files` is a **glob**; every match is staged **flat** into each
-process work dir, so nothing depends on a directory layout on ephemeral AWS spot
-nodes. Upload the files flat and point the glob at them:
+The federated round trip:
 
 ```
-SDY<study>_tidy.csv                  Panel A features (per study)
+site: select-features ──selected──▶ agg: consensus-features ──consensus──▶ site: fit-models
+site: fit-models      ──vectors ──▶ agg: aggregate-vectors  ──federated──▶ site: apply-coefficients
+```
+
+## Data
+
+Data is read through the embedded `oadr_data` loader — the same one the
+oadr-autoantibody notebooks use — so Panel A / Panel B are built identically. The
+site steps take `--site` (the study, e.g. `SDY524`), `--panel` (`A` = legacy 9
+features, `B` = extended 12), and `--data-root` (a directory of the flat
+ImmPort-derived files, found by name):
+
+```
+SDY<study>_tidy.csv                  Panel A features
 SDY<study>_cpeptide_auc_tidy.csv     the C-peptide AUC target (both panels)
-aa_<id>.csv, demo_<id>.csv           Panel B extended features (ids 524/569/1737)
+aa_<id>.csv, demo_<id>.csv           Panel B extended features (524/569/1737)
 SDY<study>_arm_or_cohort.txt         treatment (subject → arm → treatment)
 SDY<study>_arm_2_subject.txt
 ```
 
-
-## This Python Package
-
-A self-contained image, `container/oadr-cpep/`, provides the per-site
-`oadr-cpep-cli` (subcommands `select-features`, `fit-models`,
-`apply-coefficients`) plus the embedded `oadr_data` loader. Build once and
-publish; the site workflow references it. The aggregator step has its own image
-in **oadr-cpep-fed-predict-aggregator-nf**.
+Example:
 
 ```bash
-docker build -t ghcr.io/nih-nlm/oadr-cpep:0.1.0 container/oadr-cpep/
+oadr-cpep select-features --site SDY524 --panel B --data-root data/
+oadr-cpep fit-models      --site SDY524 --panel B --data-root data/ --features consensus_features.csv
+oadr-cpep apply-coefficients --site SDY524 --panel B --data-root data/ \
+    --coefficients federated_ridge_fedavg_vector.csv
+```
+
+## Container
+
+The Nextflow workflows reference a container built from this repo and published
+to `ghcr.io/nih-nlm/oadr-cpep` by GitHub Actions (`.github/workflows/docker-build.yml`)
+on push to `main` and on release.
+
+```bash
+docker build -t ghcr.io/nih-nlm/oadr-cpep:latest .
+```
+
+## Documentation
+
+Sphinx (autodoc + RTD theme) API docs are built and deployed to GitHub Pages by
+`.github/workflows/docs.yml`. Build locally:
+
+```bash
+pip install sphinx myst-parser sphinx-rtd-theme
+sphinx-apidoc -f --separate -o docs/source/ src/oadr_cpep
+cd docs && make html
 ```
 
 ## Layout
 
-
-## Parameters
-
+```
+src/oadr_cpep/
+  cli.py            typer CLI (thin command wrappers)
+  site.py           per-site steps: select_features, fit_models, apply_coefficients
+  aggregate.py      coordinator steps: consensus_features, aggregate_vectors
+  oadr_data.py      Panel A / Panel B loader (ported from oadr-autoantibody)
+  logging_config.py
+pyproject.toml      package metadata + oadr-cpep entry point
+Dockerfile          ghcr image (clones this repo, pip installs it)
+docs/               sphinx (RTD theme) → GitHub Pages
+tests/              CLI tests
+```

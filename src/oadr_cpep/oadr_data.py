@@ -1,11 +1,12 @@
 """
 Shared data loaders for OADR autoantibody work — ported verbatim from the
-oadr-autoantibody repo (src/oadr_data.py) so the federated site container reads
-exactly the same ImmPort-derived inputs and builds Panel A / Panel B the same way.
+oadr-autoantibody repo (src/oadr_data.py) so oadr-cpep reads exactly the same
+ImmPort-derived inputs and builds Panel A / Panel B the same way.
 
 Only change from the source: the data root is configurable (env var
 OADR_DATA_ROOT, or set ``oadr_data._DATA`` before calling) instead of being
-derived from the repo location, plus a ``load_features(study, panel)`` helper.
+derived from the repo location, plus a ``load_features(study, panel)`` helper,
+and a flat-first file resolver for the AWS-spot / Nextflow work dir.
 
 Two feature panels:
 
@@ -30,7 +31,7 @@ import pandas as pd
 # Data root: env var OADR_DATA_ROOT, else the current dir. In the Nextflow /
 # AWS-spot world every input file is staged FLAT into the process work dir, so
 # the default is "." and files are found by name. The CLI overrides this by
-# setting oadr_data._DATA = Path(args.data_root) before calling the loaders.
+# setting oadr_data._DATA = Path(data_root) before calling the loaders.
 _DATA = Path(os.environ.get("OADR_DATA_ROOT", "."))
 
 
@@ -162,11 +163,12 @@ _JEFF_STUDY_FILES = {
 
 def _treatment_from_arms(study, subject_ids):
     """Per-subject active-treatment flag by transitive closure: subject -> arm
-    (data/arms/<study>_arm_2_subject.txt) -> treatment, where the control arm is
-    identified by name/description (placebo / control / no treatment) and the
-    treatment arm is the other. Works across drugs (hOKT3, teplizumab, alefacept).
-    If a study has no control arm (e.g. SDY1737, arms are age groups) treatment is
-    undetermined and all subjects are 0. Returns a 0/1 Series aligned to subject_ids."""
+    (<study>_arm_2_subject.txt) -> treatment, where the control arm is identified
+    by name/description (placebo / control / no treatment) and the treatment arm
+    is the other. Works across drugs (hOKT3, teplizumab, alefacept). If a study
+    has no control arm (e.g. SDY1737, arms are age groups) treatment is
+    undetermined and all subjects are 0. Returns a 0/1 Series aligned to
+    subject_ids."""
     arm_file = _resolve(f"{study}_arm_or_cohort.txt", "arms")
     a2s_file = _resolve(f"{study}_arm_2_subject.txt", "arms")
     subject_ids = list(subject_ids)

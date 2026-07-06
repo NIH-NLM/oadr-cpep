@@ -1,13 +1,14 @@
 FROM mambaorg/micromamba:1.5.6
 
 LABEL maintainer="nih-nlm"
+LABEL org.opencontainers.image.title="oadr-cpep"
+LABEL org.opencontainers.image.description="Federated prediction of residual beta-cell function (C-peptide AUC)"
 
 USER root:root
 
 RUN apt-get update && \
-    apt-get install -y git procps chromium && \
-    apt-get install -y --no-install-recommends build-essential gcc g++ gfortran && \
-    apt-get clean
+    apt-get install -y git procps && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -21,25 +22,12 @@ ENV MAMBA_ROOT_PREFIX=/opt/conda \
     PATH=/opt/conda/bin:$PATH \
     DEBIAN_FRONTEND=noninteractive
 
-# Install Python with channels specified
-RUN micromamba install -y -n base -c conda-forge python=3.10 pip && \
+# Python + pip; all package dependencies come from pyproject.toml
+RUN micromamba install -y -n base -c conda-forge python=3.12 pip && \
     micromamba clean --all --yes
 
-# Install all packages via pip
 WORKDIR /app/oadr-cpep
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    python -m pip install --no-cache-dir \
-        numpy==1.24.3 \
-        pandas==2.1.4 \
-        scipy==1.11.4 \
-        scikit-learn \
-        scanpy==1.9.6 \
-        anndata==0.9.2 \
-        plotly==5.22.0 \
-        kaleido==0.2.1 \
-        matplotlib==3.8.0 \
-        typer \
-        mygene && \
     python -m pip install --no-cache-dir .
 
 ENV PYTHONPATH="/app/oadr-cpep/src"

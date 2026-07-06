@@ -37,7 +37,7 @@ jobs:
 
       - name: Generate API documentation
         run: |
-          sphinx-apidoc -f --separate -o docs/source/ src/scsilhouette
+          sphinx-apidoc -f --separate -o docs/source/ src/oadr_cpep
 
       - name: Build HTML docs
         run: |
