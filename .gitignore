@@ -1,2 +1,5 @@
 src/oadr_cpep.egg-info/
 src/oadr_cpep/__pycache__/
+tests/__pycache__/
+data
+*.csv

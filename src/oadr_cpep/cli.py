@@ -86,12 +86,16 @@ def apply_coefficients_command(
 def consensus_features_command(
     input_dir: Path = typer.Option(..., help="Dir (searched recursively) with per-site *_selected_features.csv"),
     min_sites: Optional[int] = typer.Option(None, help="Keep features chosen by >= this many sites (default: majority)"),
+    from_site: Optional[str] = typer.Option(None, help="Use ONE site's selection as the consensus (single-site, bespoke)"),
+    panel: Optional[str] = typer.Option(None, help="Restrict to one panel (A|B); avoids mixing panels in one dir"),
     outdir: Path = typer.Option(".", help="Output directory"),
 ):
-    """Phase 1 (aggregator): tally the site selections into a consensus set."""
+    """Phase 1 (aggregator): build the consensus feature set (multi-site tally, or --from-site)."""
     agg_mod.consensus_features(
         input_dir=str(input_dir),
         min_sites=min_sites,
+        from_site=from_site,
+        panel=panel,
         outdir=str(outdir),
     )
 
@@ -101,12 +105,14 @@ def consensus_features_command(
 def aggregate_vectors_command(
     input_dir: Path = typer.Option(..., help="Dir (searched recursively) with per-site vectors / forests"),
     method: str = typer.Option("fedavg", help="Combine rule: fedavg | median | mean"),
+    panel: Optional[str] = typer.Option(None, help="Restrict to one panel (A|B); avoids mixing panels in one dir"),
     outdir: Path = typer.Option(".", help="Output directory"),
 ):
     """Phase 2 (aggregator): combine the site coefficient vectors / forests."""
     agg_mod.aggregate_vectors(
         input_dir=str(input_dir),
         method=method,
+        panel=panel,
         outdir=str(outdir),
     )
 

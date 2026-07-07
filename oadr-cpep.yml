@@ -1,4 +1,4 @@
-name: oadr-pep
+name: oadr-cpep
 channels:
   - conda-forge
 dependencies:

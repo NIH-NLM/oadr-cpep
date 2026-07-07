@@ -56,14 +56,59 @@ SDY<study>_arm_or_cohort.txt         treatment (subject → arm → treatment)
 SDY<study>_arm_2_subject.txt
 ```
 
-Example:
+## Quickstart — a full local round trip
+
+Federated feature selection is not "one site's picks pushed to the others."
+Each site selects on its **own** data; the aggregator combines those into a
+**consensus**; that consensus is what every site then fits on.
+
+Run from the repo root (so `--data-root data` resolves), letting each command
+pick its **default output name** — outputs land in the current directory, so a
+scratch dir is tidiest. The three Panel-B studies are SDY524, SDY569, SDY1737.
 
 ```bash
-oadr-cpep select-features --site SDY524 --panel B --data-root data/
-oadr-cpep fit-models      --site SDY524 --panel B --data-root data/ --features consensus_features.csv
-oadr-cpep apply-coefficients --site SDY524 --panel B --data-root data/ \
-    --coefficients federated_ridge_fedavg_vector.csv
+# 1. Each site selects features on its OWN data -> <site>_panelB_selected_features.csv
+oadr-cpep select-features --site SDY524  --panel B --data-root data
+oadr-cpep select-features --site SDY569  --panel B --data-root data
+oadr-cpep select-features --site SDY1737 --panel B --data-root data
+
+# 2. Aggregator builds the consensus (panel-scoped) -> consensus_panelB_features.csv
+#    (majority of sites by default; --min-sites 1 = union of all selections)
+oadr-cpep consensus-features --input-dir . --panel B --outdir .
+
+# 3. Each site fits Ridge / LASSO / Random Forest on the consensus features
+oadr-cpep fit-models --site SDY524  --panel B --data-root data --features consensus_panelB_features.csv
+oadr-cpep fit-models --site SDY569  --panel B --data-root data --features consensus_panelB_features.csv
+oadr-cpep fit-models --site SDY1737 --panel B --data-root data --features consensus_panelB_features.csv
+
+# 4. Aggregator combines the vectors (FedAvg) + union of forests -> federated_panelB_ridge_fedavg_vector.csv
+oadr-cpep aggregate-vectors --input-dir . --panel B --method fedavg --outdir .
+
+# 5. Each site incorporates the central federated vector (solo vs federated)
+oadr-cpep apply-coefficients --site SDY524  --panel B --data-root data --coefficients federated_panelB_ridge_fedavg_vector.csv
+oadr-cpep apply-coefficients --site SDY569  --panel B --data-root data --coefficients federated_panelB_ridge_fedavg_vector.csv
+oadr-cpep apply-coefficients --site SDY1737 --panel B --data-root data --coefficients federated_panelB_ridge_fedavg_vector.csv
 ```
+
+Because every command is scoped with `--panel`, Panel A and Panel B runs can
+share one working directory without ever mixing. In a real federated deployment
+each site runs its own steps at its own institution (it only ever has its own
+data); the aggregator sees only the parameter files — never subject-level data.
+Here you drive all sites from one machine for testing.
+
+### Single-site (bespoke) consensus
+
+When the result is driven by one dominant study rather than a genuine multi-site
+agreement, use that site's selection *as* the consensus — honest and
+reproducible — instead of relying on a tally threshold:
+
+```bash
+oadr-cpep consensus-features --input-dir . --panel B --from-site SDY524 --outdir .
+#   -> consensus_panelB_features.csv = exactly SDY524's selected features
+```
+
+Everything downstream (`fit-models`, `aggregate-vectors`, `apply-coefficients`)
+is unchanged — it just proceeds on that singular feature set.
 
 ## Container
 
