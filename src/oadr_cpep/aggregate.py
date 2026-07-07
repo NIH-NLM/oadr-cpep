@@ -113,9 +113,11 @@ def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None):
         files = sorted(glob.glob(os.path.join(input_dir, "**", vec_glob), recursive=True))
         if not files:
             continue
-        series, sizes = [], []
+        series, sizes, contrib = [], [], []
         for f in files:
-            d = pd.read_csv(f).set_index("feature")
+            d = pd.read_csv(f)
+            contrib.append(str(d["site"].iloc[0]) if "site" in d.columns else os.path.basename(f))
+            d = d.set_index("feature")
             series.append(d["coefficient"])
             sizes.append(int(d["n_subjects"].iloc[0]) if "n_subjects" in d.columns else 1)
         allfeats = sorted(set().union(*[set(s.index) for s in series]))
@@ -133,9 +135,11 @@ def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None):
         if panel:
             out["panel"] = panel.upper()
         out["n_sites"] = len(files)
+        out["sites"] = ";".join(sorted(set(contrib)))
         out_name = f"federated_{fed_infix}{meth}_{method}_vector.csv"
         out.to_csv(os.path.join(outdir, out_name), index=False)
-        logger.info(f"Aggregated {len(files)} {meth} vectors by {method} -> {out_name}")
+        logger.info(f"Aggregated {len(files)} {meth} vectors by {method} "
+                    f"from {sorted(set(contrib))} -> {out_name}")
 
     rf_glob = f"*_{tag}_rf.pkl" if panel else "*_rf.pkl"
     rf_files = sorted(glob.glob(os.path.join(input_dir, "**", rf_glob), recursive=True))

@@ -15,6 +15,7 @@ dependencies = [
   "scikit-learn",
   "scipy",
   "matplotlib",
+  "plotly",
 ]
 
 [build-system]
