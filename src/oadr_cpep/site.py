@@ -35,14 +35,22 @@ def _load(site, panel, data_root):
     return od.load_features(site, panel)          # (frame, feature_names, target)
 
 
-def select_features(site, panel="B", data_root=".", out=None, seed=42):
+def select_features(site, panel="B", data_root=".", outdir=".", seed=42):
     """Phase 1: LASSO selects features on this site's own data.
+
+    Writes two files:
+
+      * ``<site>_panel<X>_lasso_selection.csv`` — the full LASSO result: every
+        candidate feature with its coefficient and a ``selected`` (0/1) flag.
+      * ``<site>_panel<X>_selected_features.csv`` — only the selected features
+        (feature + coefficient). This is the clean list that feeds ``fit-models``
+        and ``consensus-features``.
 
     Args:
         site: study id, e.g. ``SDY524``.
         panel: feature panel, ``A`` (legacy 9) or ``B`` (extended 12).
         data_root: directory holding the (flat) data files.
-        out: output CSV path; defaults to ``<site>_selected_features.csv``.
+        outdir: output directory.
         seed: random seed.
     """
     frame, feats, target = _load(site, panel, data_root)
@@ -52,19 +60,30 @@ def select_features(site, panel="B", data_root=".", out=None, seed=42):
     sc = MinMaxScaler().fit(X)                     # scale within this site only
     cv = max(2, min(5, len(y) // 4))
     m = LassoCV(cv=cv, random_state=seed, max_iter=50000).fit(sc.transform(X), y)
+    os.makedirs(outdir, exist_ok=True)
+    p = panel.upper()
 
-    out_df = pd.DataFrame({"feature": feats, "coefficient": m.coef_,
-                           "selected": (np.abs(m.coef_) > 1e-8).astype(int)})
-    out_df["site"] = site
-    out_df["panel"] = panel.upper()
-    out_df["n_subjects"] = len(y)
-    out_df["alpha"] = float(m.alpha_)
-    path = out or f"{site}_panel{panel.upper()}_selected_features.csv"
-    out_df.to_csv(path, index=False)
-    kept = [f for f, c in zip(feats, m.coef_) if abs(c) > 1e-8]
-    logger.info(f"{site} panel {panel.upper()}: N={len(y)}, "
+    # Full LASSO feature-selection result (all candidate features).
+    full = pd.DataFrame({"feature": feats, "coefficient": m.coef_,
+                         "selected": (np.abs(m.coef_) > 1e-8).astype(int)})
+    full["site"] = site
+    full["panel"] = p
+    full["n_subjects"] = len(y)
+    full["alpha"] = float(m.alpha_)
+    full.to_csv(os.path.join(outdir, f"{site}_panel{p}_lasso_selection.csv"), index=False)
+
+    # Just the selected features — the input to fit-models / consensus.
+    sel = full.loc[full["selected"] == 1, ["feature", "coefficient"]].copy()
+    sel["site"] = site
+    sel["panel"] = p
+    sel["n_subjects"] = len(y)
+    sel.to_csv(os.path.join(outdir, f"{site}_panel{p}_selected_features.csv"), index=False)
+
+    kept = list(sel["feature"])
+    logger.info(f"{site} panel {p}: N={len(y)}, "
                 f"selected {len(kept)}/{len(feats)} at alpha={m.alpha_:.4f}: {kept}")
-    return path
+    logger.info(f"  full LASSO -> {site}_panel{p}_lasso_selection.csv")
+    logger.info(f"  selected   -> {site}_panel{p}_selected_features.csv  (feeds fit-models)")
 
 
 def fit_models(site, panel="B", features=None, data_root=".", outdir=".",

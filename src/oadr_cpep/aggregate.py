@@ -65,7 +65,8 @@ def consensus_features(input_dir, min_sites=None, outdir=".", panel=None, from_s
         if not match:
             raise SystemExit(f"No selected-features file for site {from_site!r} under {input_dir}")
         d = pd.read_csv(match[0])
-        consensus = sorted(d.loc[d["selected"] == 1, "feature"])
+        chosen = d.loc[d["selected"] == 1, "feature"] if "selected" in d.columns else d["feature"]
+        consensus = sorted(chosen)
         pd.DataFrame({"feature": consensus}).to_csv(os.path.join(outdir, cons_name), index=False)
         logger.info(f"consensus from site {from_site} (single-site, bespoke) "
                     f"({len(consensus)}) -> {cons_name}: {consensus}")
@@ -75,7 +76,8 @@ def consensus_features(input_dir, min_sites=None, outdir=".", panel=None, from_s
     for f in files:
         d = pd.read_csv(f)
         sites.append(d["site"].iloc[0] if "site" in d.columns else os.path.basename(f))
-        for feat in d.loc[d["selected"] == 1, "feature"]:
+        chosen = d.loc[d["selected"] == 1, "feature"] if "selected" in d.columns else d["feature"]
+        for feat in chosen:
             counts[feat] = counts.get(feat, 0) + 1
     n = len(files)
     thr = min_sites if min_sites is not None else (n // 2 + 1)
