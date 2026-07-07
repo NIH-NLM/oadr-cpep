@@ -59,7 +59,7 @@ def select_features(site, panel="B", data_root=".", out=None, seed=42):
     out_df["panel"] = panel.upper()
     out_df["n_subjects"] = len(y)
     out_df["alpha"] = float(m.alpha_)
-    path = out or f"{site}_selected_features.csv"
+    path = out or f"{site}_panel{panel.upper()}_selected_features.csv"
     out_df.to_csv(path, index=False)
     kept = [f for f, c in zip(feats, m.coef_) if abs(c) > 1e-8]
     logger.info(f"{site} panel {panel.upper()}: N={len(y)}, "
@@ -97,17 +97,18 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
         rows += [{"feature": f, "coefficient": float(c)} for f, c in zip(feats, m.coef_)]
         vec = pd.DataFrame(rows)
         vec["site"] = site
+        vec["panel"] = panel.upper()
         vec["n_subjects"] = len(y)
         vec["method"] = name
-        vec.to_csv(os.path.join(outdir, f"{site}_{name}_vector.csv"), index=False)
-        logger.info(f"Wrote {site}_{name}_vector.csv")
+        vec.to_csv(os.path.join(outdir, f"{site}_panel{panel.upper()}_{name}_vector.csv"), index=False)
+        logger.info(f"Wrote {site}_panel{panel.upper()}_{name}_vector.csv")
 
     rf = RandomForestRegressor(n_estimators=n_trees, min_samples_leaf=2,
                                n_jobs=1, random_state=seed).fit(Xs, y)
-    with open(os.path.join(outdir, f"{site}_rf.pkl"), "wb") as fh:
+    with open(os.path.join(outdir, f"{site}_panel{panel.upper()}_rf.pkl"), "wb") as fh:
         pickle.dump({"forest": rf, "scaler": sc, "features": feats,
-                     "site": site, "n_subjects": len(y)}, fh)
-    logger.info(f"Wrote {site}_rf.pkl  ({n_trees} trees on {len(feats)} features)")
+                     "site": site, "panel": panel.upper(), "n_subjects": len(y)}, fh)
+    logger.info(f"Wrote {site}_panel{panel.upper()}_rf.pkl  ({n_trees} trees on {len(feats)} features)")
 
 
 def _r2(y, p):
@@ -201,18 +202,18 @@ def apply_coefficients(site, panel="B", coefficients=None, data_root=".",
         ax.grid(alpha=0.25)
     fig.suptitle(f"{method.upper()} — {site} solo vs federated",
                  fontsize=13, fontweight="bold")
-    fig.savefig(os.path.join(outdir, f"{site}_{method}_federated.png"), dpi=220)
-    fig.savefig(os.path.join(outdir, f"{site}_{method}_federated.pdf"), dpi=300)
+    fig.savefig(os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated.png"), dpi=220)
+    fig.savefig(os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated.pdf"), dpi=300)
     plt.close(fig)
 
     # Subject-level predictions stay local (site's own use).
     pd.DataFrame({"y_true": y, "solo_pred": solo, "federated_pred": fed}).to_csv(
-        os.path.join(outdir, f"{site}_{method}_federated_predictions.csv"), index=False)
+        os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated_predictions.csv"), index=False)
     # Scalar performance summary is what is meant to leave the site.
-    pd.DataFrame([{"site": site, "method": method, "n_subjects": n, "n_features": len(feats),
+    pd.DataFrame([{"site": site, "panel": panel.upper(), "method": method, "n_subjects": n, "n_features": len(feats),
                    "r2_solo": r2_s, "r2_solo_lo": ci_s[0], "r2_solo_hi": ci_s[1],
                    "r2_federated": r2_f, "r2_fed_lo": ci_f[0], "r2_fed_hi": ci_f[1]}]).to_csv(
-        os.path.join(outdir, f"{site}_{method}_federated_performance.csv"), index=False)
+        os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated_performance.csv"), index=False)
     logger.info(f"{site} {method}, N={n}:")
     logger.info(f"  solo      R2={r2_s:+.3f}  95% CI [{ci_s[0]:+.2f}, {ci_s[1]:+.2f}]")
     logger.info(f"  federated R2={r2_f:+.3f}  95% CI [{ci_f[0]:+.2f}, {ci_f[1]:+.2f}]  "
