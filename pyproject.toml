@@ -6,7 +6,6 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [
   { name = "Anne Deslattes Mays, PhD", email = "adeslat@scitechcon.org" },
-  { name = "Richard Scheuermann, PhD", email = "richard.scheuermann@nih.gov" }
 ]
 requires-python = ">=3.9"
 dependencies = [
