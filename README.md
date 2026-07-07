@@ -67,7 +67,9 @@ pick its **default output name** — outputs land in the current directory, so a
 scratch dir is tidiest. The three Panel-B studies are SDY524, SDY569, SDY1737.
 
 ```bash
-# 1. Each site selects features on its OWN data -> <site>_panelB_selected_features.csv
+# 1. Each site selects on its OWN data. Two outputs per site:
+#      <site>_panelB_lasso_selection.csv    full LASSO result (all features + coefficients)
+#      <site>_panelB_selected_features.csv  just the selected features (feeds fit-models)
 oadr-cpep select-features --site SDY524  --panel B --data-root data
 oadr-cpep select-features --site SDY569  --panel B --data-root data
 oadr-cpep select-features --site SDY1737 --panel B --data-root data
@@ -108,7 +110,9 @@ oadr-cpep consensus-features --input-dir . --panel B --from-site SDY524 --outdir
 ```
 
 Everything downstream (`fit-models`, `aggregate-vectors`, `apply-coefficients`)
-is unchanged — it just proceeds on that singular feature set.
+is unchanged — it just proceeds on that singular feature set. (Equivalently, you
+can skip the consensus step and feed one site's list straight in:
+`fit-models … --features SDY524_panelB_selected_features.csv`.)
 
 ## Container
 

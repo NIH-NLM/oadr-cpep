@@ -28,13 +28,13 @@ def select_features_command(
     site: str = typer.Option(..., help="Study id, e.g. SDY524"),
     panel: str = typer.Option("B", help="Feature panel: A (legacy 9) or B (extended 12)"),
     data_root: Path = typer.Option(".", help="Dir with the (flat) data files; default: the work dir"),
-    out: Optional[Path] = typer.Option(None, help="Output CSV path (default: <site>_selected_features.csv)"),
+    outdir: Path = typer.Option(".", help="Output directory"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 1 (site): LASSO selects features on this site's own data."""
     site_mod.select_features(
         site=site, panel=panel, data_root=str(data_root),
-        out=str(out) if out else None, seed=seed,
+        outdir=str(outdir), seed=seed,
     )
 
 
