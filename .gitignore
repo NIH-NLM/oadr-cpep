@@ -3,3 +3,4 @@ src/oadr_cpep/__pycache__/
 tests/__pycache__/
 data
 *.csv
+results/

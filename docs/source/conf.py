@@ -22,6 +22,7 @@ autodoc_mock_imports = [
     'sklearn',
     'scipy',
     'matplotlib',
+    'plotly',
     'typer',
 ]
 

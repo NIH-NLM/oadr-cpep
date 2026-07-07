@@ -103,6 +103,9 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
     """
     frame, _all, target = _load(site, panel, data_root)
     feats = list(pd.read_csv(features)["feature"])
+    features_source = os.path.basename(str(features))
+    logger.info(f"{site} panel {panel.upper()}: fitting on {len(feats)} features "
+                f"from {features_source}: {feats}")
     y = frame[target].astype(float).values
     X = frame.reindex(columns=feats).fillna(0.0).astype(float).values
     sc = MinMaxScaler().fit(X)
@@ -119,6 +122,7 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
         vec["panel"] = panel.upper()
         vec["n_subjects"] = len(y)
         vec["method"] = name
+        vec["features_source"] = features_source
         vec.to_csv(os.path.join(outdir, f"{site}_panel{panel.upper()}_{name}_vector.csv"), index=False)
         logger.info(f"Wrote {site}_panel{panel.upper()}_{name}_vector.csv")
 
@@ -128,6 +132,83 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
         pickle.dump({"forest": rf, "scaler": sc, "features": feats,
                      "site": site, "panel": panel.upper(), "n_subjects": len(y)}, fh)
     logger.info(f"Wrote {site}_panel{panel.upper()}_rf.pkl  ({n_trees} trees on {len(feats)} features)")
+
+    # Fit report: per-method 5-fold CV MSE / R2 + observed-vs-predicted graphic.
+    p = panel.upper()
+    kf = KFold(n_splits=min(5, max(2, len(y) // 2)), shuffle=True, random_state=seed)
+    builders = [
+        ("ridge", lambda: Ridge(alpha=ridge_alpha)),
+        ("lasso", lambda: Lasso(alpha=lasso_alpha, max_iter=50000)),
+        ("rf",    lambda: RandomForestRegressor(n_estimators=n_trees, min_samples_leaf=2,
+                                                n_jobs=1, random_state=seed)),
+    ]
+    metrics, preds = [], {}
+    for name, build in builders:
+        pred = np.full(len(y), np.nan)
+        for tr, te in kf.split(X):
+            scf = MinMaxScaler().fit(X[tr])
+            model = build().fit(scf.transform(X[tr]), y[tr])
+            pred[te] = model.predict(scf.transform(X[te]))
+        mse = float(np.nanmean((y - pred) ** 2))
+        r2 = _r2(y, pred)
+        metrics.append({"site": site, "panel": p, "method": name,
+                        "n_subjects": len(y), "n_features": len(feats),
+                        "mse": mse, "r2": r2,
+                        "features_source": features_source, "features": ";".join(feats)})
+        preds[name] = pred
+        logger.info(f"  {name}: 5-fold CV  MSE={mse:.3f}  R2={r2:+.3f}")
+    pd.DataFrame(metrics).to_csv(os.path.join(outdir, f"{site}_panel{p}_fit_metrics.csv"), index=False)
+    _fit_report(site, p, y, preds, {m["method"]: m for m in metrics}, outdir, features_source)
+    logger.info(f"Wrote {site}_panel{p}_fit_metrics.csv and {site}_panel{p}_fit.(png|svg|html)")
+
+
+def _fit_report(site, panel, y, preds, mby, outdir, features_source=""):
+    """Observed-vs-predicted scatter per method (5-fold CV) as PNG, SVG, and an
+    interactive HTML. PNG/SVG via matplotlib; HTML via plotly's self-contained
+    write_html (no kaleido/chromium needed). ``features_source`` is shown in the
+    title so the graphic records which feature set it was fit on."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    methods = [m for m in ("ridge", "lasso", "rf") if m in preds]
+    lo = float(min(y.min(), *[np.nanmin(preds[m]) for m in methods]))
+    hi = float(max(y.max(), *[np.nanmax(preds[m]) for m in methods]))
+    base = os.path.join(outdir, f"{site}_panel{panel}_fit")
+    src = f" — features: {features_source}" if features_source else ""
+    suptitle = f"{site} panel {panel} — fit (5-fold CV){src}"
+
+    fig, axes = plt.subplots(1, len(methods), figsize=(5.2 * len(methods), 4.6),
+                             constrained_layout=True, squeeze=False)
+    for ax, m in zip(axes[0], methods):
+        ax.scatter(y, preds[m], c="#1f77b4", s=55, edgecolor="white")
+        ax.plot([lo, hi], [lo, hi], "k--", alpha=0.4)
+        ax.set_title(f"{m.upper()}  R²={mby[m]['r2']:+.2f}  MSE={mby[m]['mse']:.3f}", fontweight="bold")
+        ax.set_xlabel("Observed log(C-peptide AUC)")
+        ax.set_ylabel("Predicted")
+        ax.grid(alpha=0.25)
+    fig.suptitle(suptitle, fontsize=13, fontweight="bold")
+    fig.savefig(base + ".png", dpi=220)
+    fig.savefig(base + ".svg")
+    plt.close(fig)
+
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        titles = [f"{m.upper()}  R²={mby[m]['r2']:+.2f}  MSE={mby[m]['mse']:.3f}" for m in methods]
+        pfig = make_subplots(rows=1, cols=len(methods), subplot_titles=titles)
+        for i, m in enumerate(methods, start=1):
+            pfig.add_trace(go.Scatter(x=y, y=preds[m], mode="markers", showlegend=False,
+                                      marker=dict(size=8, line=dict(width=1, color="white"))),
+                           row=1, col=i)
+            pfig.add_trace(go.Scatter(x=[lo, hi], y=[lo, hi], mode="lines", showlegend=False,
+                                      line=dict(dash="dash", color="black")), row=1, col=i)
+            pfig.update_xaxes(title_text="Observed", row=1, col=i)
+            pfig.update_yaxes(title_text="Predicted", row=1, col=i)
+        pfig.update_layout(title_text=suptitle, width=420 * len(methods), height=460)
+        pfig.write_html(base + ".html")
+    except Exception as e:                     # plotly optional; PNG/SVG still produced
+        logger.info(f"  (interactive HTML skipped: {e})")
 
 
 def _r2(y, p):

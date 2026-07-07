@@ -28,7 +28,7 @@ One CLI (`oadr-cpep`) provides both the per-site and coordinator steps:
 | Command | Role | Does |
 |---|---|---|
 | `select-features` | site · Phase 1 | LASSO selects features on the site's own data |
-| `fit-models` | site · Phase 2 | Ridge / LASSO / Random Forest on the consensus features |
+| `fit-models` | site · Phase 2 | Ridge / LASSO / RF on the consensus features; reports 5-fold CV MSE/R² + a fit graphic (png/svg/html) |
 | `apply-coefficients` | site · Phase 3 | incorporate the central federated vector — solo-vs-federated 5-fold CV, bootstrap 95% CI, scatter |
 | `consensus-features` | aggregator · Phase 1 | tally site selections into a consensus feature set |
 | `aggregate-vectors` | aggregator · Phase 2 | combine site vectors (FedAvg / median / mean) + union of forests |
@@ -78,7 +78,8 @@ oadr-cpep select-features --site SDY1737 --panel B --data-root data
 #    (majority of sites by default; --min-sites 1 = union of all selections)
 oadr-cpep consensus-features --input-dir . --panel B --outdir .
 
-# 3. Each site fits Ridge / LASSO / Random Forest on the consensus features
+# 3. Each site fits Ridge / LASSO / RF on the consensus features. Also writes
+#    <site>_panelB_fit_metrics.csv (5-fold CV MSE/R²) and <site>_panelB_fit.{png,svg,html}
 oadr-cpep fit-models --site SDY524  --panel B --data-root data --features consensus_panelB_features.csv
 oadr-cpep fit-models --site SDY569  --panel B --data-root data --features consensus_panelB_features.csv
 oadr-cpep fit-models --site SDY1737 --panel B --data-root data --features consensus_panelB_features.csv
