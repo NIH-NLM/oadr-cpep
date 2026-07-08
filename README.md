@@ -29,7 +29,7 @@ One CLI (`oadr-cpep`) provides both the per-site and coordinator steps:
 |---|---|---|
 | `select-features` | site · Phase 1 | LASSO selects features on the site's own data |
 | `fit-models` | site · Phase 2 | Ridge / LASSO / RF on the consensus features; reports 5-fold CV MSE/R² + a fit graphic (png/svg/html) |
-| `apply-coefficients` | site · Phase 3 | incorporate the central federated vector — solo-vs-federated 5-fold CV, bootstrap 95% CI, scatter |
+| `apply-coefficients` | site · Phase 3 | this site's OWN outcome using the federated results — solo vs federated across Ridge/LASSO/RF (`--coefficients-dir`), bootstrap 95% CI, combined graphic |
 | `consensus-features` | aggregator · Phase 1 | tally site selections into a consensus feature set |
 | `aggregate-vectors` | aggregator · Phase 2 | combine site vectors (FedAvg / median / mean) + union of forests |
 
@@ -87,10 +87,13 @@ oadr-cpep fit-models --site SDY1737 --panel B --data-root data --features consen
 # 4. Aggregator combines the vectors (FedAvg) + union of forests -> federated_panelB_ridge_fedavg_vector.csv
 oadr-cpep aggregate-vectors --input-dir . --panel B --method fedavg --outdir .
 
-# 5. Each site incorporates the central federated vector (solo vs federated)
-oadr-cpep apply-coefficients --site SDY524  --panel B --data-root data --coefficients federated_panelB_ridge_fedavg_vector.csv
-oadr-cpep apply-coefficients --site SDY569  --panel B --data-root data --coefficients federated_panelB_ridge_fedavg_vector.csv
-oadr-cpep apply-coefficients --site SDY1737 --panel B --data-root data --coefficients federated_panelB_ridge_fedavg_vector.csv
+# 5. Each site's OWN outcome using the federated results — all three methods
+#    (ridge/lasso vectors + rf union, auto-discovered from --coefficients-dir).
+#    Writes <site>_panelB_federated_metrics.csv (solo vs federated per method)
+#    and <site>_panelB_federated.{png,svg,html} (3 methods x solo|federated).
+oadr-cpep apply-coefficients --site SDY524  --panel B --data-root data --coefficients-dir .
+oadr-cpep apply-coefficients --site SDY569  --panel B --data-root data --coefficients-dir .
+oadr-cpep apply-coefficients --site SDY1737 --panel B --data-root data --coefficients-dir .
 ```
 
 Because every command is scoped with `--panel`, Panel A and Panel B runs can

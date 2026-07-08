@@ -227,94 +227,212 @@ def _boot_r2_ci(y, p, n_boot, seed):
     return float(np.nanpercentile(out, 2.5)), float(np.nanpercentile(out, 97.5))
 
 
-def apply_coefficients(site, panel="B", coefficients=None, data_root=".",
+def _cv_predict(build, X, y, kf):
+    """Out-of-fold predictions from a fresh model per fold (within-site scaling)."""
+    pred = np.full(len(y), np.nan)
+    for tr, te in kf.split(X):
+        sc = MinMaxScaler().fit(X[tr])
+        m = build().fit(sc.transform(X[tr]), y[tr])
+        pred[te] = m.predict(sc.transform(X[te]))
+    return pred
+
+
+def _fed_linear(X, y, kf, c_coef, c_int):
+    """Federated linear prediction: apply the aggregated vector as-is to each
+    held-out fold (scaled by the training fold, within this site only)."""
+    pred = np.full(len(y), np.nan)
+    for tr, te in kf.split(X):
+        sc = MinMaxScaler().fit(X[tr])
+        pred[te] = sc.transform(X[te]) @ c_coef + c_int
+    return pred
+
+
+def _fed_rf(frame, forests):
+    """Federated RF prediction: average the union forests, each applied with its
+    own scaler and feature set (fixed forests -> one prediction per subject)."""
+    preds = []
+    for fd in forests:
+        Xi = frame.reindex(columns=fd["features"]).fillna(0.0).astype(float).values
+        preds.append(fd["forest"].predict(fd["scaler"].transform(Xi)))
+    return np.mean(preds, axis=0)
+
+
+def _linear_job(method, path):
+    vec = pd.read_csv(path)
+    m = (method or (vec["method"].iloc[0] if "method" in vec.columns else "ridge")).lower()
+    cd = dict(zip(vec["feature"], vec["coefficient"]))
+    c_int = float(cd.pop("__intercept__", 0.0))
+    feats = [f for f in vec["feature"] if f != "__intercept__"]
+    coef = np.array([float(cd[f]) for f in feats])
+    return {"kind": "linear", "method": m, "feats": feats, "coef": coef, "intercept": c_int,
+            "source": os.path.basename(str(path)),
+            "aggregation": str(vec["aggregation"].iloc[0]) if "aggregation" in vec.columns else "",
+            "mode": str(vec["mode"].iloc[0]) if "mode" in vec.columns else "",
+            "sites": str(vec["sites"].iloc[0]) if "sites" in vec.columns else ""}
+
+
+def _rf_job(path):
+    with open(path, "rb") as fh:
+        u = pickle.load(fh)
+    forests = u.get("forests", [])
+    feats = list(forests[0]["features"]) if forests else []
+    n_trees = int(getattr(forests[0]["forest"], "n_estimators", 200)) if forests else 200
+    return {"kind": "rf", "method": "rf", "forests": forests, "feats": feats, "n_trees": n_trees,
+            "source": os.path.basename(str(path)),
+            "aggregation": str(u.get("aggregation", "union")),
+            "mode": str(u.get("mode", "")),
+            "sites": ";".join(u.get("sites", []))}
+
+
+def _federated_jobs(panel, coefficients, coefficients_dir, method):
+    """Assemble the method jobs from a single vector/pickle or a directory of
+    federated results (ridge + lasso vectors + rf union)."""
+    import glob
+    jobs = []
+    if coefficients_dir:
+        for meth in ("ridge", "lasso"):
+            f = sorted(glob.glob(os.path.join(coefficients_dir, f"federated_panel{panel}_{meth}_*_vector.csv")))
+            if f:
+                jobs.append(_linear_job(meth, f[0]))
+        rf = sorted(glob.glob(os.path.join(coefficients_dir, f"federated_panel{panel}_rf_union.pkl")))
+        if rf:
+            jobs.append(_rf_job(rf[0]))
+    elif coefficients:
+        jobs.append(_rf_job(coefficients) if str(coefficients).endswith(".pkl")
+                    else _linear_job(method, coefficients))
+    return jobs
+
+
+def apply_coefficients(site, panel="B", coefficients=None, coefficients_dir=None, data_root=".",
                        method=None, ridge_alpha=1.0, lasso_alpha=0.008,
                        n_boot=2000, outdir=".", seed=42):
-    """Phase 3: incorporate the central federated coefficients.
+    """Phase 3: produce THIS site's own outcome using the federated results.
 
-    Reproduces the Stage-2 notebook evaluation from this site's own view: a
-    5-fold CV comparing the site's SOLO model against the FEDERATED model, with
-    bootstrap 95% CIs on R² and an observed-vs-predicted scatter. The federated
-    arm applies the aggregator's central FedAvg vector as-is — the central
-    average already includes this site, so it is not re-blended (that would
-    double-count this site). Features are MinMax scaled within this site only,
-    per fold. Subject-level predictions stay local; only the performance summary
+    There is no single global "aggregated result" — each site produces its own
+    site-specific outcome, and the federated coefficient vector (and RF union)
+    are simply the channel that carries the aggregated information here. For each
+    of Ridge / LASSO / RF this compares the site's SOLO model (5-fold CV) against
+    the FEDERATED model (the aggregated vector applied as-is; for RF, the average
+    of the union forests), with bootstrap 95% CIs and an observed-vs-predicted
+    scatter. Subject-level predictions stay local; only the performance summary
     leaves.
 
     Args:
-        site: study id.
+        site: study id (e.g. SDY524) — the site whose outcome this is.
         panel: feature panel ``A`` or ``B``.
-        coefficients: path to the central federated coefficient vector CSV.
+        coefficients: a single federated vector CSV (or rf union .pkl).
+        coefficients_dir: a directory of federated results — runs all methods
+            found (ridge/lasso vectors + rf union). Takes precedence.
         data_root: directory holding the (flat) data files.
-        method: ``ridge`` or ``lasso`` (default: read from the vector).
-        ridge_alpha: Ridge L2 penalty for the solo model.
-        lasso_alpha: LASSO L1 penalty for the solo model.
+        method: ``ridge``/``lasso`` for a single linear ``coefficients`` file.
+        ridge_alpha / lasso_alpha: penalties for the solo models.
         n_boot: bootstrap resamples for the R² 95% CI.
         outdir: output directory.
         seed: random seed.
     """
+    frame, _all, target = _load(site, panel, data_root)
+    y = frame[target].astype(float).values
+    n = len(y)
+    p = panel.upper()
+    os.makedirs(outdir, exist_ok=True)
+
+    jobs = _federated_jobs(p, coefficients, coefficients_dir, method)
+    if not jobs:
+        raise SystemExit("No federated results found. Pass --coefficients <vector.csv|rf_union.pkl> "
+                         "or --coefficients-dir <dir of federated_ outputs>.")
+
+    kf = KFold(n_splits=min(5, max(2, n // 2)), shuffle=True, random_state=seed)
+    results = []
+    for job in jobs:
+        m_name = job["method"]
+        X = frame.reindex(columns=job["feats"]).fillna(0.0).astype(float).values
+        if job["kind"] == "linear":
+            build = ((lambda: Lasso(alpha=lasso_alpha, max_iter=50000)) if m_name == "lasso"
+                     else (lambda: Ridge(alpha=ridge_alpha)))
+            solo = _cv_predict(build, X, y, kf)
+            fed = _fed_linear(X, y, kf, job["coef"], job["intercept"])
+        else:  # rf union
+            nt = job["n_trees"]
+            solo = _cv_predict(lambda: RandomForestRegressor(n_estimators=nt, min_samples_leaf=2,
+                                                             n_jobs=1, random_state=seed), X, y, kf)
+            fed = _fed_rf(frame, job["forests"])
+        r2_s = _r2(y, solo); ci_s = _boot_r2_ci(y, solo, n_boot, seed)
+        r2_f = _r2(y, fed);  ci_f = _boot_r2_ci(y, fed, n_boot, seed)
+        results.append({"method": m_name, "solo": solo, "fed": fed,
+                        "r2_solo": r2_s, "ci_solo": ci_s, "r2_fed": r2_f, "ci_fed": ci_f,
+                        "n_features": len(job["feats"]), "source": job["source"],
+                        "aggregation": job["aggregation"], "mode": job["mode"], "sites": job["sites"]})
+        logger.info(f"{site} {m_name}: solo R2={r2_s:+.3f}  federated R2={r2_f:+.3f}  "
+                    f"({'improves' if r2_f > r2_s else 'no gain'})  [{job['mode']}: {job['sites']}]")
+
+    # Scalar performance summary (what leaves the site) — one row per method.
+    pd.DataFrame([{"site": site, "panel": p, "method": r["method"], "n_subjects": n,
+                   "n_features": r["n_features"],
+                   "r2_solo": r["r2_solo"], "r2_solo_lo": r["ci_solo"][0], "r2_solo_hi": r["ci_solo"][1],
+                   "r2_federated": r["r2_fed"], "r2_fed_lo": r["ci_fed"][0], "r2_fed_hi": r["ci_fed"][1],
+                   "coefficients_source": r["source"], "aggregation": r["aggregation"],
+                   "mode": r["mode"], "aggregated_sites": r["sites"]} for r in results]).to_csv(
+        os.path.join(outdir, f"{site}_panel{p}_federated_metrics.csv"), index=False)
+
+    # Subject-level predictions stay local.
+    pred_cols = {"y_true": y}
+    for r in results:
+        pred_cols[f"{r['method']}_solo"] = r["solo"]
+        pred_cols[f"{r['method']}_federated"] = r["fed"]
+    pd.DataFrame(pred_cols).to_csv(
+        os.path.join(outdir, f"{site}_panel{p}_federated_predictions.csv"), index=False)
+
+    _federated_report(site, p, y, results, outdir, results[0]["sites"])
+    logger.info(f"Wrote {site}_panel{p}_federated_metrics.csv and {site}_panel{p}_federated.(png|svg|html)")
+
+
+def _federated_report(site, panel, y, results, outdir, sites_label):
+    """Per-method solo-vs-federated scatter (rows = methods, cols = solo|federated)
+    as PNG, SVG, and interactive HTML — this site's own outcome."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    frame, _all, target = _load(site, panel, data_root)
-    vec = pd.read_csv(coefficients)
-    method = (method or (vec["method"].iloc[0] if "method" in vec.columns else "ridge")).lower()
-    cd = dict(zip(vec["feature"], vec["coefficient"]))
-    c_int = float(cd.pop("__intercept__", 0.0))
-    feats = [f for f in vec["feature"] if f != "__intercept__"]
-    c_coef = np.array([float(cd[f]) for f in feats])
+    nm = len(results)
+    allp = [y] + [r["solo"] for r in results] + [r["fed"] for r in results]
+    lo = float(min(np.nanmin(a) for a in allp))
+    hi = float(max(np.nanmax(a) for a in allp))
+    base = os.path.join(outdir, f"{site}_panel{panel}_federated")
+    prov = f" [of {sites_label}]" if sites_label else ""
+    suptitle = f"{site} panel {panel} — solo vs federated{prov}"
 
-    y = frame[target].astype(float).values
-    X = frame.reindex(columns=feats).fillna(0.0).astype(float).values
-    n = len(y)
-
-    def model_fn():
-        if method == "lasso":
-            return Lasso(alpha=lasso_alpha, max_iter=50000)
-        return Ridge(alpha=ridge_alpha)
-
-    kf = KFold(n_splits=min(5, max(2, n // 2)), shuffle=True, random_state=seed)
-    solo = np.full(n, np.nan)
-    fed = np.full(n, np.nan)
-    for tr, te in kf.split(X):
-        sc = MinMaxScaler().fit(X[tr])                 # scale within this site only
-        m = model_fn().fit(sc.transform(X[tr]), y[tr])
-        Xte = sc.transform(X[te])
-        solo[te] = m.predict(Xte)
-        fed[te] = Xte @ c_coef + c_int                 # central federated vector as-is
-
-    r2_s = _r2(y, solo); ci_s = _boot_r2_ci(y, solo, n_boot, seed)
-    r2_f = _r2(y, fed);  ci_f = _boot_r2_ci(y, fed, n_boot, seed)
-
-    os.makedirs(outdir, exist_ok=True)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), constrained_layout=True)
-    lo = float(min(y.min(), np.nanmin(solo), np.nanmin(fed)))
-    hi = float(max(y.max(), np.nanmax(solo), np.nanmax(fed)))
-    panels = [(solo, f"{site} alone", r2_s, ci_s),
-              (fed, f"{site} + federated", r2_f, ci_f)]
-    for ax, (pred, title, r2v, ci) in zip(axes, panels):
-        ax.scatter(y, pred, c="#1f77b4", s=60, edgecolor="white")
-        ax.plot([lo, hi], [lo, hi], "k--", alpha=0.4)
-        ax.set_xlabel("Observed log(C-peptide AUC)")
-        ax.set_ylabel("Predicted log(C-peptide AUC)")
-        ax.set_title(f"{title}\nR²={r2v:+.2f} [{ci[0]:+.2f}, {ci[1]:+.2f}]", fontweight="bold")
-        ax.grid(alpha=0.25)
-    fig.suptitle(f"{method.upper()} — {site} solo vs federated",
-                 fontsize=13, fontweight="bold")
-    fig.savefig(os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated.png"), dpi=220)
-    fig.savefig(os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated.pdf"), dpi=300)
+    fig, axes = plt.subplots(nm, 2, figsize=(10, 4.4 * nm), constrained_layout=True, squeeze=False)
+    for row, r in enumerate(results):
+        for col, (pred, lab, r2v, ci) in enumerate([
+                (r["solo"], f"{site} alone", r["r2_solo"], r["ci_solo"]),
+                (r["fed"], f"{site} + federated", r["r2_fed"], r["ci_fed"])]):
+            ax = axes[row][col]
+            ax.scatter(y, pred, c="#1f77b4", s=55, edgecolor="white")
+            ax.plot([lo, hi], [lo, hi], "k--", alpha=0.4)
+            ax.set_title(f"{r['method'].upper()} — {lab}\nR²={r2v:+.2f} [{ci[0]:+.2f}, {ci[1]:+.2f}]",
+                         fontweight="bold", fontsize=10)
+            ax.set_xlabel("Observed"); ax.set_ylabel("Predicted"); ax.grid(alpha=0.25)
+    fig.suptitle(suptitle, fontsize=13, fontweight="bold")
+    fig.savefig(base + ".png", dpi=220)
+    fig.savefig(base + ".svg")
     plt.close(fig)
 
-    # Subject-level predictions stay local (site's own use).
-    pd.DataFrame({"y_true": y, "solo_pred": solo, "federated_pred": fed}).to_csv(
-        os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated_predictions.csv"), index=False)
-    # Scalar performance summary is what is meant to leave the site.
-    pd.DataFrame([{"site": site, "panel": panel.upper(), "method": method, "n_subjects": n, "n_features": len(feats),
-                   "r2_solo": r2_s, "r2_solo_lo": ci_s[0], "r2_solo_hi": ci_s[1],
-                   "r2_federated": r2_f, "r2_fed_lo": ci_f[0], "r2_fed_hi": ci_f[1]}]).to_csv(
-        os.path.join(outdir, f"{site}_panel{panel.upper()}_{method}_federated_performance.csv"), index=False)
-    logger.info(f"{site} {method}, N={n}:")
-    logger.info(f"  solo      R2={r2_s:+.3f}  95% CI [{ci_s[0]:+.2f}, {ci_s[1]:+.2f}]")
-    logger.info(f"  federated R2={r2_f:+.3f}  95% CI [{ci_f[0]:+.2f}, {ci_f[1]:+.2f}]  "
-                f"({'improves' if r2_f > r2_s else 'no gain'})")
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        titles = []
+        for r in results:
+            titles += [f"{r['method'].upper()} — alone  R²={r['r2_solo']:+.2f}",
+                       f"{r['method'].upper()} — +federated  R²={r['r2_fed']:+.2f}"]
+        pfig = make_subplots(rows=nm, cols=2, subplot_titles=titles)
+        for row, r in enumerate(results, start=1):
+            for col, pred in enumerate([r["solo"], r["fed"]], start=1):
+                pfig.add_trace(go.Scatter(x=y, y=pred, mode="markers", showlegend=False,
+                                          marker=dict(size=7, line=dict(width=1, color="white"))),
+                               row=row, col=col)
+                pfig.add_trace(go.Scatter(x=[lo, hi], y=[lo, hi], mode="lines", showlegend=False,
+                                          line=dict(dash="dash", color="black")), row=row, col=col)
+        pfig.update_layout(title_text=suptitle, width=900, height=380 * nm)
+        pfig.write_html(base + ".html")
+    except Exception as e:                     # plotly optional; PNG/SVG still produced
+        logger.info(f"  (interactive HTML skipped: {e})")
