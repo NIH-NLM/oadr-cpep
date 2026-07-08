@@ -62,20 +62,24 @@ def fit_models_command(
 # ---------------------------------------------------------------- site: Phase 3
 @app.command("apply-coefficients")
 def apply_coefficients_command(
-    site: str = typer.Option(..., help="Study id, e.g. SDY524"),
+    site: str = typer.Option(..., help="Study id, e.g. SDY524 — the site whose outcome this is"),
     panel: str = typer.Option("B", help="Feature panel: A (legacy 9) or B (extended 12)"),
-    coefficients: Path = typer.Option(..., help="Central federated coefficient vector CSV"),
+    coefficients_dir: Optional[Path] = typer.Option(None, help="Dir of federated_ results — runs all methods (ridge/lasso/rf)"),
+    coefficients: Optional[Path] = typer.Option(None, help="A single federated vector CSV (or rf_union.pkl)"),
     data_root: Path = typer.Option(".", help="Dir with the (flat) data files"),
-    method: Optional[str] = typer.Option(None, help="ridge|lasso (default: read from the vector)"),
+    method: Optional[str] = typer.Option(None, help="ridge|lasso for a single --coefficients vector"),
     ridge_alpha: float = typer.Option(1.0, help="Ridge L2 penalty for the solo model"),
     lasso_alpha: float = typer.Option(0.008, help="LASSO L1 penalty for the solo model"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the R² 95% CI"),
     outdir: Path = typer.Option(".", help="Output directory"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
-    """Phase 3 (site): incorporate the central federated coefficients (solo vs federated)."""
+    """Phase 3 (site): this site's own outcome using the federated results (solo vs federated, all methods)."""
     site_mod.apply_coefficients(
-        site=site, panel=panel, coefficients=str(coefficients), data_root=str(data_root),
+        site=site, panel=panel,
+        coefficients=str(coefficients) if coefficients else None,
+        coefficients_dir=str(coefficients_dir) if coefficients_dir else None,
+        data_root=str(data_root),
         method=method, ridge_alpha=ridge_alpha, lasso_alpha=lasso_alpha,
         n_boot=n_boot, outdir=str(outdir), seed=seed,
     )

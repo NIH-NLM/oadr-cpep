@@ -134,21 +134,28 @@ def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None):
         out["aggregation"] = method
         if panel:
             out["panel"] = panel.upper()
-        out["n_sites"] = len(files)
+        mode = "solo" if len(set(contrib)) == 1 else "federated"
+        out["n_sites"] = len(set(contrib))
         out["sites"] = ";".join(sorted(set(contrib)))
+        out["mode"] = mode
         out_name = f"federated_{fed_infix}{meth}_{method}_vector.csv"
         out.to_csv(os.path.join(outdir, out_name), index=False)
-        logger.info(f"Aggregated {len(files)} {meth} vectors by {method} "
+        logger.info(f"Aggregated {len(files)} {meth} vector(s) [{mode}] by {method} "
                     f"from {sorted(set(contrib))} -> {out_name}")
 
     rf_glob = f"*_{tag}_rf.pkl" if panel else "*_rf.pkl"
     rf_files = sorted(glob.glob(os.path.join(input_dir, "**", rf_glob), recursive=True))
     if rf_files:
-        forests = []
+        forests, rf_sites = [], []
         for f in rf_files:
             with open(f, "rb") as fh:
-                forests.append(pickle.load(fh))
+                fd = pickle.load(fh)
+            forests.append(fd)
+            rf_sites.append(str(fd.get("site", os.path.basename(f))))
+        mode = "solo" if len(set(rf_sites)) == 1 else "federated"
         rf_name = f"federated_{fed_infix}rf_union.pkl"
         with open(os.path.join(outdir, rf_name), "wb") as fh:
-            pickle.dump({"forests": forests, "aggregation": "union"}, fh)
-        logger.info(f"Union of {len(rf_files)} forests -> {rf_name}")
+            pickle.dump({"forests": forests, "aggregation": "union", "mode": mode,
+                         "sites": sorted(set(rf_sites))}, fh)
+        logger.info(f"Union of {len(rf_files)} forest(s) [{mode}] "
+                    f"from {sorted(set(rf_sites))} -> {rf_name}")

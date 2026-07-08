@@ -4,3 +4,4 @@ tests/__pycache__/
 data
 *.csv
 results/
+.DS_Store
