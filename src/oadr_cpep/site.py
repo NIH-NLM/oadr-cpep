@@ -2,8 +2,8 @@
 Per-site (institution) steps of the federated pipeline.
 
   select_features    : Phase 1 — LASSO selects features on this site's own data.
-  fit_models         : Phase 2 — Ridge / LASSO / Random Forest on the consensus
-                       features.
+  fit_models         : Phase 2 — Ridge / LASSO / Random Forest on a given
+                       feature set (whatever --features you pass).
   apply_coefficients : Phase 3 — incorporate the aggregator's central federated
                        vector (solo-vs-federated CV, bootstrap 95% CI, scatter).
 
@@ -88,12 +88,18 @@ def select_features(site, panel="B", data_root=".", outdir=".", seed=42):
 
 def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
                ridge_alpha=1.0, lasso_alpha=0.008, n_trees=200, seed=42):
-    """Phase 2: fit Ridge / LASSO / Random Forest on the consensus features.
+    """Phase 2: fit Ridge / LASSO / Random Forest on a given feature set.
+
+    The feature set is whatever ``--features`` CSV you pass — a single site's
+    selected features, a multi-site consensus, or any hand-picked list; it is not
+    assumed to be a consensus. The source filename is recorded in every output
+    (``features_source``) and logged.
 
     Args:
         site: study id.
         panel: feature panel ``A`` or ``B``.
-        features: path to the consensus feature list CSV (column ``feature``).
+        features: path to the feature-list CSV (column ``feature``) to fit on —
+            a site's selected features, a consensus set, or any list you choose.
         data_root: directory holding the (flat) data files.
         outdir: output directory.
         ridge_alpha: Ridge L2 penalty.

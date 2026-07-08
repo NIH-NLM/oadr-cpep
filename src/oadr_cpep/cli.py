@@ -43,7 +43,7 @@ def select_features_command(
 def fit_models_command(
     site: str = typer.Option(..., help="Study id, e.g. SDY524"),
     panel: str = typer.Option("B", help="Feature panel: A (legacy 9) or B (extended 12)"),
-    features: Path = typer.Option(..., help="Consensus feature list CSV (column 'feature')"),
+    features: Path = typer.Option(..., help="Feature-list CSV (column 'feature') to fit on — selected, consensus, or any list"),
     data_root: Path = typer.Option(".", help="Dir with the (flat) data files"),
     outdir: Path = typer.Option(".", help="Output directory"),
     ridge_alpha: float = typer.Option(1.0, help="Ridge L2 penalty"),
@@ -51,7 +51,7 @@ def fit_models_command(
     n_trees: int = typer.Option(200, help="Random Forest trees"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
-    """Phase 2 (site): fit Ridge / LASSO / Random Forest on the consensus features."""
+    """Phase 2 (site): fit Ridge / LASSO / Random Forest on a given feature set."""
     site_mod.fit_models(
         site=site, panel=panel, features=str(features), data_root=str(data_root),
         outdir=str(outdir), ridge_alpha=ridge_alpha, lasso_alpha=lasso_alpha,
