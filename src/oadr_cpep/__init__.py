@@ -2,14 +2,17 @@
 oadr-cpep: Federated prediction of residual beta-cell function (C-peptide AUC)
 in Type 1 Diabetes.
 
-A single typer CLI drives both federated workflows:
+One typer CLI; one function per process, grouped into logical modules:
 
-  site       : select-features, fit-models, apply-coefficients
-  aggregator : consensus-features, aggregate-vectors
+  select.py     : select_features                       (Phase 1)
+  fit.py        : fit_ridge, fit_lasso, fit_rf, fit_models (Phase 2)
+  apply.py      : apply_coefficients                     (Phase 3, site outcome)
+  aggregate.py  : consensus_features, aggregate_vectors  (aggregator)
+  plot.py       : all graphics (matplotlib PNG/SVG, plotly HTML)
+  common_utils.py, oadr_data.py, logging_config.py       (shared)
 
-Data is read through the embedded oadr_data loader (the same one the
-oadr-autoantibody notebooks use). Only model parameters and scalar performance
-summaries cross the site boundary — never subject-level data.
+Only model parameters and scalar performance summaries cross the site boundary —
+never subject-level data.
 """
 # src/oadr_cpep/__init__.py
 

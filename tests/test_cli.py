@@ -8,6 +8,9 @@ runner = CliRunner()
 
 EXPECTED_COMMANDS = [
     "select-features",
+    "fit-ridge",
+    "fit-lasso",
+    "fit-rf",
     "fit-models",
     "apply-coefficients",
     "consensus-features",

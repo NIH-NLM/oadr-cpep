@@ -27,11 +27,12 @@ One CLI (`oadr-cpep`) provides both the per-site and coordinator steps:
 
 | Command | Role | Does |
 |---|---|---|
-| `select-features` | site · Phase 1 | LASSO selects features on the site's own data |
-| `fit-models` | site · Phase 2 | Ridge / LASSO / RF on the consensus features; reports 5-fold CV MSE/R² + a fit graphic (png/svg/html) |
+| `select-features` | site · Phase 1 | LASSO selects features on the site's own data (alpha chosen by CV) |
+| `fit-ridge` / `fit-lasso` / `fit-rf` | site · Phase 2 | fit one method on a given feature set → coefficient vector / forest + 5-fold CV MSE/R² + a fit graphic (png/svg/html) |
+| `fit-models` | site · Phase 2 | convenience — runs all three fits on the same feature set |
 | `apply-coefficients` | site · Phase 3 | this site's OWN outcome using the federated results — solo vs federated across Ridge/LASSO/RF (`--coefficients-dir`), bootstrap 95% CI, combined graphic |
 | `consensus-features` | aggregator · Phase 1 | tally site selections into a consensus feature set |
-| `aggregate-vectors` | aggregator · Phase 2 | combine site vectors (FedAvg / median / mean) + union of forests |
+| `aggregate-vectors` | aggregator · Phase 2 | combine site vectors (FedAvg / median / mean) + union of forests; `--panel` / `--from` scope which vectors combine |
 
 The federated round trip:
 
