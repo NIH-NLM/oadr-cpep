@@ -70,7 +70,7 @@ scratch dir is tidiest. The three Panel-B studies are SDY524, SDY569, SDY1737.
 ```bash
 # 1. Each site selects on its OWN data. Two outputs per site:
 #      <site>_panelB_lasso_selection.csv    full LASSO result (all features + coefficients)
-#      <site>_panelB_selected_features.csv  just the selected features (feeds fit-models)
+#      <site>_panelB_selected_features.csv  just the selected features (feeds fit)
 oadr-cpep select-features --site SDY524  --panel B --data-root data
 oadr-cpep select-features --site SDY569  --panel B --data-root data
 oadr-cpep select-features --site SDY1737 --panel B --data-root data
@@ -79,10 +79,11 @@ oadr-cpep select-features --site SDY1737 --panel B --data-root data
 #    (majority of sites by default; --min-sites 1 = union of all selections)
 oadr-cpep consensus-features --input-dir . --panel B --outdir .
 
-# 3. Each site fits Ridge / LASSO / RF on the given feature set. Every output is
-#    tagged with the feature source (here: consensus) so you can see what was
-#    used and nothing overwrites: <site>_from-consensus_panelB_{ridge,lasso}_vector.csv,
-#    _rf.pkl, _fit_metrics.csv (5-fold CV MSE/R²), _fit.{png,svg,html}
+# 3. Each site fits all three methods (or call fit-ridge / fit-lasso / fit-rf
+#    separately). Every output is tagged with the feature source (here: consensus)
+#    so you see what was used and nothing overwrites — per method:
+#      <site>_from-consensus_panelB_ridge_vector.csv, _ridge_fit_metrics.csv,
+#      _ridge_fit.{png,svg,html}   (and _lasso_*, _rf*)
 oadr-cpep fit-models --site SDY524  --panel B --data-root data --features consensus_panelB_features.csv
 oadr-cpep fit-models --site SDY569  --panel B --data-root data --features consensus_panelB_features.csv
 oadr-cpep fit-models --site SDY1737 --panel B --data-root data --features consensus_panelB_features.csv
@@ -121,6 +122,23 @@ is unchanged — it just proceeds on that singular feature set. (Equivalently, y
 can skip the consensus step and feed one site's list straight in:
 `fit-models … --features SDY524_panelB_selected_features.csv`.)
 
+### Scoping to one feature source (`--from`)
+
+Fit outputs are stamped with the feature source (`<site>_from-SDY524_panelB_…`).
+When several sources coexist in one directory — e.g. you fit some sites on
+SDY524's features and others on their own — scope the aggregate and apply with
+`--from` so nothing mixes, and the federated files say which source they're built
+on:
+
+```bash
+# combine only the vectors/forests fit on SDY524's features
+oadr-cpep aggregate-vectors --input-dir . --panel B --from SDY524 --method fedavg --outdir .
+#   -> federated_from-SDY524_panelB_ridge_fedavg_vector.csv  (+ lasso, rf_union)
+
+# SDY524's own outcome, tuned with those federated results (all three methods)
+oadr-cpep apply-coefficients --site SDY524 --panel B --data-root data --coefficients-dir . --from SDY524
+```
+
 ## Container
 
 The Nextflow workflows reference a container built from this repo and published
@@ -145,10 +163,14 @@ cd docs && make html
 ## Layout
 
 ```
-src/oadr_cpep/
+src/oadr_cpep/        one function per process, grouped into logical modules
   cli.py            typer CLI (thin command wrappers)
-  site.py           per-site steps: select_features, fit_models, apply_coefficients
-  aggregate.py      coordinator steps: consensus_features, aggregate_vectors
+  select.py         select_features                          (Phase 1)
+  fit.py            fit_ridge, fit_lasso, fit_rf, fit_models   (Phase 2)
+  apply.py          apply_coefficients                        (Phase 3, site outcome)
+  aggregate.py      consensus_features, aggregate_vectors     (aggregator)
+  plot.py           all graphics (matplotlib PNG/SVG, plotly HTML)
+  common_utils.py   load / within-site scale / CV / R² / bootstrap
   oadr_data.py      Panel A / Panel B loader (ported from oadr-autoantibody)
   logging_config.py
 pyproject.toml      package metadata + oadr-cpep entry point
