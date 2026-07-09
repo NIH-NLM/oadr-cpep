@@ -1,16 +1,13 @@
 """
-Coordinator (aggregator) steps of the federated pipeline.
+Aggregator steps: build the consensus feature set and combine the per-site
+coefficient vectors / forests.
 
-  consensus_features : Phase 1 — tally the per-site feature selections and keep
-                       the features chosen by >= a threshold number of sites.
-  aggregate_vectors  : Phase 2 — combine the per-site coefficient vectors
-                       (FedAvg weighted by n_subjects, or median / mean) and
-                       build a union-of-forests ensemble from the site forests.
+  consensus_features : Phase 1 — multi-site tally, or one site's selection (--from-site).
+  aggregate_vectors  : Phase 2 — FedAvg / median / mean of the vectors + union of forests.
+                       Detects solo vs federated; --panel and --from scope which
+                       vectors combine so panels and feature sources never mix.
 
-Both take an optional ``panel`` (A|B): when given, only files for that panel are
-considered and the outputs are panel-tagged, so Panel A and Panel B runs can
-share one directory without mixing. Only site-level model parameters (feature
-lists, coefficient vectors, trained forests) are read — never subject-level data.
+Only site-level parameters (feature lists, coefficient vectors, forests) are read.
 """
 from __future__ import annotations
 
@@ -26,30 +23,18 @@ from .logging_config import setup_logger
 logger = setup_logger("oadr_cpep")
 
 
-def _panel_tag(panel):
-    """Return the ``panel<X>`` infix (e.g. 'panelB') or '' when panel is None."""
-    return f"panel{panel.upper()}" if panel else ""
-
-
+# --------------------------------------------------------------- consensus (Phase 1)
 def consensus_features(input_dir, min_sites=None, outdir=".", panel=None, from_site=None):
-    """Phase 1: build the feature set to fit on.
-
-    By default this keeps the features selected by >= a threshold number of
-    sites. When ``from_site`` is given it instead uses that one site's selection
-    AS the consensus — a bespoke, single-site choice, honest when the result is
-    driven by one dominant study rather than a genuine multi-site agreement.
+    """Tally per-site ``*_selected_features.csv`` into a consensus feature set.
 
     Args:
-        input_dir: directory (searched recursively) holding the per-site
-            ``*_selected_features.csv`` files.
-        min_sites: keep a feature selected by at least this many sites; defaults
-            to a simple majority (``n_sites // 2 + 1``). Ignored with ``from_site``.
+        input_dir: directory (searched recursively) with the selected-features files.
+        min_sites: keep a feature selected by >= this many sites (default: majority).
         outdir: output directory.
-        panel: restrict to one panel (``A`` or ``B``); avoids mixing panels when
-            both are in ``input_dir``. Outputs are panel-tagged when given.
-        from_site: use this site's selection as the consensus (single-site).
+        panel: restrict to one panel (A|B); avoids mixing panels in one dir.
+        from_site: use this site's selection AS the consensus (single-site, bespoke).
     """
-    tag = _panel_tag(panel)
+    tag = f"panel{panel.upper()}" if panel else ""
     sel_glob = f"*_{tag}_selected_features.csv" if panel else "*_selected_features.csv"
     cons_name = f"consensus_{tag}_features.csv" if panel else "consensus_features.csv"
     tally_name = f"feature_selection_tally_{tag}.csv" if panel else "feature_selection_tally.csv"
@@ -60,7 +45,6 @@ def consensus_features(input_dir, min_sites=None, outdir=".", panel=None, from_s
     os.makedirs(outdir, exist_ok=True)
 
     if from_site:
-        # Bespoke: one site's selection IS the consensus (not a multi-site tally).
         match = [f for f in files if os.path.basename(f).startswith(f"{from_site}_")]
         if not match:
             raise SystemExit(f"No selected-features file for site {from_site!r} under {input_dir}")
@@ -82,7 +66,6 @@ def consensus_features(input_dir, min_sites=None, outdir=".", panel=None, from_s
     n = len(files)
     thr = min_sites if min_sites is not None else (n // 2 + 1)
     consensus = sorted(f for f, c in counts.items() if c >= thr)
-    os.makedirs(outdir, exist_ok=True)
     pd.DataFrame({"feature": consensus}).to_csv(os.path.join(outdir, cons_name), index=False)
     tally = pd.DataFrame(sorted(counts.items(), key=lambda kv: -kv[1]),
                          columns=["feature", "n_sites_selected"])
@@ -92,25 +75,46 @@ def consensus_features(input_dir, min_sites=None, outdir=".", panel=None, from_s
     logger.info(f"consensus features ({len(consensus)}) -> {cons_name}: {consensus}")
 
 
-def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None):
-    """Phase 2: combine the per-site coefficient vectors and forests.
+# --------------------------------------------------------------- aggregate (Phase 2)
+def _scope(panel, from_features):
+    parts = []
+    if from_features:
+        parts.append(f"from-{from_features}")
+    if panel:
+        parts.append(f"panel{panel.upper()}")
+    return "_".join(parts)
+
+
+def _find(input_dir, tail, panel, from_features):
+    """Glob per-site files ending in ``tail`` (e.g. 'ridge_vector.csv'), scoped by
+    feature source and/or panel."""
+    if from_features and panel:
+        pat = f"*_from-{from_features}_panel{panel.upper()}_{tail}"
+    elif panel:
+        pat = f"*_panel{panel.upper()}_{tail}"
+    elif from_features:
+        pat = f"*_from-{from_features}_*_{tail}"
+    else:
+        pat = f"*_{tail}"
+    return sorted(glob.glob(os.path.join(input_dir, "**", pat), recursive=True))
+
+
+def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None, from_features=None):
+    """Combine the site coefficient vectors (FedAvg / median / mean) and forests.
 
     Args:
-        input_dir: directory (searched recursively) holding the per-site
-            ``*_ridge_vector.csv`` / ``*_lasso_vector.csv`` and ``*_rf.pkl``.
-        method: vector combine rule — ``fedavg`` (weighted by ``n_subjects``),
-            ``median``, or ``mean``.
+        input_dir: directory (searched recursively) with per-site vectors / forests.
+        method: vector combine rule — ``fedavg`` (weighted by n_subjects), ``median``, ``mean``.
         outdir: output directory.
-        panel: restrict to one panel (``A`` or ``B``); outputs are panel-tagged
-            when given.
+        panel: restrict to one panel (A|B).
+        from_features: restrict to vectors fit on one feature source (e.g. SDY524).
     """
-    tag = _panel_tag(panel)
-    fed_infix = f"{tag}_" if panel else ""            # federated_panelB_ridge_...  vs  federated_ridge_...
+    scope = _scope(panel, from_features)
+    fed_prefix = "federated" + (f"_{scope}" if scope else "")
     os.makedirs(outdir, exist_ok=True)
 
     for meth in ("ridge", "lasso"):
-        vec_glob = f"*_{tag}_{meth}_vector.csv" if panel else f"*_{meth}_vector.csv"
-        files = sorted(glob.glob(os.path.join(input_dir, "**", vec_glob), recursive=True))
+        files = _find(input_dir, f"{meth}_vector.csv", panel, from_features)
         if not files:
             continue
         series, sizes, contrib = [], [], []
@@ -129,22 +133,23 @@ def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None):
             agg = np.median(M, axis=0)
         else:
             agg = M.mean(axis=0)
+        mode = "solo" if len(set(contrib)) == 1 else "federated"
         out = pd.DataFrame({"feature": allfeats, "coefficient": agg})
         out["method"] = meth
         out["aggregation"] = method
         if panel:
             out["panel"] = panel.upper()
-        mode = "solo" if len(set(contrib)) == 1 else "federated"
+        if from_features:
+            out["features_source_site"] = from_features
         out["n_sites"] = len(set(contrib))
         out["sites"] = ";".join(sorted(set(contrib)))
         out["mode"] = mode
-        out_name = f"federated_{fed_infix}{meth}_{method}_vector.csv"
+        out_name = f"{fed_prefix}_{meth}_{method}_vector.csv"
         out.to_csv(os.path.join(outdir, out_name), index=False)
         logger.info(f"Aggregated {len(files)} {meth} vector(s) [{mode}] by {method} "
                     f"from {sorted(set(contrib))} -> {out_name}")
 
-    rf_glob = f"*_{tag}_rf.pkl" if panel else "*_rf.pkl"
-    rf_files = sorted(glob.glob(os.path.join(input_dir, "**", rf_glob), recursive=True))
+    rf_files = _find(input_dir, "rf.pkl", panel, from_features)
     if rf_files:
         forests, rf_sites = [], []
         for f in rf_files:
@@ -153,7 +158,7 @@ def aggregate_vectors(input_dir, method="fedavg", outdir=".", panel=None):
             forests.append(fd)
             rf_sites.append(str(fd.get("site", os.path.basename(f))))
         mode = "solo" if len(set(rf_sites)) == 1 else "federated"
-        rf_name = f"federated_{fed_infix}rf_union.pkl"
+        rf_name = f"{fed_prefix}_rf_union.pkl"
         with open(os.path.join(outdir, rf_name), "wb") as fh:
             pickle.dump({"forests": forests, "aggregation": "union", "mode": mode,
                          "sites": sorted(set(rf_sites))}, fh)
