@@ -78,8 +78,10 @@ oadr-cpep select-features --site SDY1737 --panel B --data-root data
 #    (majority of sites by default; --min-sites 1 = union of all selections)
 oadr-cpep consensus-features --input-dir . --panel B --outdir .
 
-# 3. Each site fits Ridge / LASSO / RF on the consensus features. Also writes
-#    <site>_panelB_fit_metrics.csv (5-fold CV MSE/R²) and <site>_panelB_fit.{png,svg,html}
+# 3. Each site fits Ridge / LASSO / RF on the given feature set. Every output is
+#    tagged with the feature source (here: consensus) so you can see what was
+#    used and nothing overwrites: <site>_from-consensus_panelB_{ridge,lasso}_vector.csv,
+#    _rf.pkl, _fit_metrics.csv (5-fold CV MSE/R²), _fit.{png,svg,html}
 oadr-cpep fit-models --site SDY524  --panel B --data-root data --features consensus_panelB_features.csv
 oadr-cpep fit-models --site SDY569  --panel B --data-root data --features consensus_panelB_features.csv
 oadr-cpep fit-models --site SDY1737 --panel B --data-root data --features consensus_panelB_features.csv

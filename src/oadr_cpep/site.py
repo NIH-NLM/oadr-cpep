@@ -110,7 +110,10 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
     frame, _all, target = _load(site, panel, data_root)
     feats = list(pd.read_csv(features)["feature"])
     features_source = os.path.basename(str(features))
-    logger.info(f"{site} panel {panel.upper()}: fitting on {len(feats)} features "
+    source_tag = os.path.splitext(features_source)[0].split("_")[0]   # e.g. SDY524
+    p = panel.upper()
+    stem = f"{site}_from-{source_tag}_panel{p}"                       # <site>_from-<src>_panel<X>
+    logger.info(f"{site} panel {p}: fitting on {len(feats)} features "
                 f"from {features_source}: {feats}")
     y = frame[target].astype(float).values
     X = frame.reindex(columns=feats).fillna(0.0).astype(float).values
@@ -129,18 +132,18 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
         vec["n_subjects"] = len(y)
         vec["method"] = name
         vec["features_source"] = features_source
-        vec.to_csv(os.path.join(outdir, f"{site}_panel{panel.upper()}_{name}_vector.csv"), index=False)
-        logger.info(f"Wrote {site}_panel{panel.upper()}_{name}_vector.csv")
+        vec.to_csv(os.path.join(outdir, f"{stem}_{name}_vector.csv"), index=False)
+        logger.info(f"Wrote {stem}_{name}_vector.csv")
 
     rf = RandomForestRegressor(n_estimators=n_trees, min_samples_leaf=2,
                                n_jobs=1, random_state=seed).fit(Xs, y)
-    with open(os.path.join(outdir, f"{site}_panel{panel.upper()}_rf.pkl"), "wb") as fh:
+    with open(os.path.join(outdir, f"{stem}_rf.pkl"), "wb") as fh:
         pickle.dump({"forest": rf, "scaler": sc, "features": feats,
-                     "site": site, "panel": panel.upper(), "n_subjects": len(y)}, fh)
-    logger.info(f"Wrote {site}_panel{panel.upper()}_rf.pkl  ({n_trees} trees on {len(feats)} features)")
+                     "site": site, "panel": p, "n_subjects": len(y),
+                     "features_source": features_source}, fh)
+    logger.info(f"Wrote {stem}_rf.pkl  ({n_trees} trees on {len(feats)} features)")
 
     # Fit report: per-method 5-fold CV MSE / R2 + observed-vs-predicted graphic.
-    p = panel.upper()
     kf = KFold(n_splits=min(5, max(2, len(y) // 2)), shuffle=True, random_state=seed)
     builders = [
         ("ridge", lambda: Ridge(alpha=ridge_alpha)),
@@ -163,16 +166,17 @@ def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
                         "features_source": features_source, "features": ";".join(feats)})
         preds[name] = pred
         logger.info(f"  {name}: 5-fold CV  MSE={mse:.3f}  R2={r2:+.3f}")
-    pd.DataFrame(metrics).to_csv(os.path.join(outdir, f"{site}_panel{p}_fit_metrics.csv"), index=False)
-    _fit_report(site, p, y, preds, {m["method"]: m for m in metrics}, outdir, features_source)
-    logger.info(f"Wrote {site}_panel{p}_fit_metrics.csv and {site}_panel{p}_fit.(png|svg|html)")
+    pd.DataFrame(metrics).to_csv(os.path.join(outdir, f"{stem}_fit_metrics.csv"), index=False)
+    _fit_report(y, preds, {m["method"]: m for m in metrics}, outdir, stem,
+                f"{site} panel {p} — fit (5-fold CV) — features: {features_source}")
+    logger.info(f"Wrote {stem}_fit_metrics.csv and {stem}_fit.(png|svg|html)")
 
 
-def _fit_report(site, panel, y, preds, mby, outdir, features_source=""):
+def _fit_report(y, preds, mby, outdir, stem, suptitle):
     """Observed-vs-predicted scatter per method (5-fold CV) as PNG, SVG, and an
     interactive HTML. PNG/SVG via matplotlib; HTML via plotly's self-contained
-    write_html (no kaleido/chromium needed). ``features_source`` is shown in the
-    title so the graphic records which feature set it was fit on."""
+    write_html (no kaleido/chromium needed). Output base is ``<stem>_fit`` and
+    the ``suptitle`` records site/panel/feature-source."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -180,9 +184,7 @@ def _fit_report(site, panel, y, preds, mby, outdir, features_source=""):
     methods = [m for m in ("ridge", "lasso", "rf") if m in preds]
     lo = float(min(y.min(), *[np.nanmin(preds[m]) for m in methods]))
     hi = float(max(y.max(), *[np.nanmax(preds[m]) for m in methods]))
-    base = os.path.join(outdir, f"{site}_panel{panel}_fit")
-    src = f" — features: {features_source}" if features_source else ""
-    suptitle = f"{site} panel {panel} — fit (5-fold CV){src}"
+    base = os.path.join(outdir, f"{stem}_fit")
 
     fig, axes = plt.subplots(1, len(methods), figsize=(5.2 * len(methods), 4.6),
                              constrained_layout=True, squeeze=False)
