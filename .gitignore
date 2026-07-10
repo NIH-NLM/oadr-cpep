@@ -7,3 +7,8 @@ results/
 fit/
 final_results/
 aggregated/
+*.html
+*.pkl
+*.svg
+*.png
+*.txt
