@@ -30,9 +30,9 @@ One CLI (`oadr-cpep`) provides both the per-site and coordinator steps:
 | `select-features` | site · Phase 1 | LASSO selects features on the site's own data (alpha chosen by CV) |
 | `fit-ridge` / `fit-lasso` / `fit-rf` | site · Phase 2 | fit one method on a given feature set → coefficient vector / forest + 5-fold CV MSE/R² + a fit graphic (png/svg/html) |
 | `fit-models` | site · Phase 2 | convenience — runs all three fits on the same feature set |
-| `apply-coefficients` | site · Phase 3 | this site's OWN outcome using the federated results — solo vs federated across Ridge/LASSO/RF (`--coefficients-dir`), bootstrap 95% CI, combined graphic |
-| `consensus-features` | aggregator · Phase 1 | tally site selections into a consensus feature set |
-| `aggregate-vectors` | aggregator · Phase 2 | combine site vectors (FedAvg / median / mean) + union of forests; `--panel` / `--from` scope which vectors combine |
+| `apply-coefficients` | site · Phase 3 | this site's OWN outcome using the federated results — solo vs federated across Ridge/LASSO/RF (`--ridge-vector` / `--lasso-vector` / `--rf-union`), bootstrap 95% CI, combined graphic |
+| `consensus-features` | aggregator · Phase 1 | tally the given per-site selections (`--features`, repeat per site) into a consensus feature set |
+| `aggregate-vectors` | aggregator · Phase 2 | combine the given per-site vectors/forests (`--vector`, repeat per file) — FedAvg / median / mean + union of forests |
 
 The federated round trip:
 
@@ -44,67 +44,89 @@ site: fit-models      ──vectors ──▶ agg: aggregate-vectors  ──fede
 ## Data
 
 Data is read through the embedded `oadr_data` loader — the same one the
-oadr-autoantibody notebooks use — so Panel A / Panel B are built identically. The
-site steps take `--site` (the study, e.g. `SDY524`), `--panel` (`A` = legacy 9
-features, `B` = extended 12), and `--data-root` (a directory of the flat
-ImmPort-derived files, found by name):
+oadr-autoantibody notebooks use — so Panel A / Panel B are built identically. Each
+site command takes `--site` (the study, e.g. `SDY524`), `--panel` (`A` = legacy 9
+features, `B` = extended 12), and the **explicit input files that panel needs** —
+no directory, no glob, nothing resolved by name:
 
-```
-SDY<study>_tidy.csv                  Panel A features
-SDY<study>_cpeptide_auc_tidy.csv     the C-peptide AUC target (both panels)
-aa_<id>.csv, demo_<id>.csv           Panel B extended features (524/569/1737)
-SDY<study>_arm_or_cohort.txt         treatment (subject → arm → treatment)
-SDY<study>_arm_2_subject.txt
-```
+| Option | Panel | File |
+|---|---|---|
+| `--tidy` | A | `SDY<n>_tidy.csv` (features) |
+| `--cpeptide` | A & B | `SDY<n>_cpeptide_auc_tidy.csv` (C-peptide AUC target) |
+| `--aa` | B | `aa_<n>.csv` (autoantibodies + anthropometrics) |
+| `--demo` | B | `demo_<n>.csv` (demographics) |
+| `--arms` | B (optional) | `SDY<n>_arm_or_cohort.txt` (treatment: subject → arm → treatment) |
+| `--arm-subjects` | B (optional) | `SDY<n>_arm_2_subject.txt` |
+
+Omitting `--arms` / `--arm-subjects` leaves `received_active_treatment`
+undetermined (0 for all) — as for SDY1737, which has no treatment arms.
+
+The aggregator commands take their inputs the same way — explicit files, no
+directory: `consensus-features --features …` (repeat per site) and
+`aggregate-vectors --vector …` (repeat per per-site vector / forest). Their
+output names (the `from-<src>` / `panel<X>` tags) are derived from the input
+files' own provenance columns, so panels and feature sources never mix.
 
 ## Quickstart — a full local round trip
 
-Federated feature selection is not "one site's picks pushed to the others."
-Each site selects on its **own** data; the aggregator combines those into a
-**consensus**; that consensus is what every site then fits on.
-
-Run from the repo root (so `--data-root data` resolves), letting each command
-pick its **default output name** — outputs land in the current directory, so a
-scratch dir is tidiest. The three Panel-B studies are SDY524, SDY569, SDY1737.
+Each site selects on its **own** data; the aggregator combines those; each site
+then applies the federated result to its own data. **Everything is explicit files
+— no directories.** Run from the repo root (data in `data/`), outputs to the
+current dir (a scratch dir is tidiest). Two sites shown (SDY524, SDY569); add
+more the same way.
 
 ```bash
-# 1. Each site selects on its OWN data. Two outputs per site:
-#      <site>_panelB_lasso_selection.csv    full LASSO result (all features + coefficients)
-#      <site>_panelB_selected_features.csv  just the selected features (feeds fit)
-oadr-cpep select-features --site SDY524  --panel B --data-root data
-oadr-cpep select-features --site SDY569  --panel B --data-root data
-oadr-cpep select-features --site SDY1737 --panel B --data-root data
+# 1. Each site selects features on its OWN data (Panel B = 5 files).
+#    -> <site>_panelB_selected_features.csv (+ _lasso_selection.csv)
+oadr-cpep select-features --site SDY524 --panel B \
+  --aa data/aa_524.csv --demo data/demo_524.csv --cpeptide data/SDY524_cpeptide_auc_tidy.csv \
+  --arms data/SDY524_arm_or_cohort.txt --arm-subjects data/SDY524_arm_2_subject.txt
+oadr-cpep select-features --site SDY569 --panel B \
+  --aa data/aa_569.csv --demo data/demo_569.csv --cpeptide data/SDY569_cpeptide_auc_tidy.csv \
+  --arms data/SDY569_arm_or_cohort.txt --arm-subjects data/SDY569_arm_2_subject.txt
 
-# 2. Aggregator builds the consensus (panel-scoped) -> consensus_panelB_features.csv
-#    (majority of sites by default; --min-sites 1 = union of all selections)
-oadr-cpep consensus-features --input-dir . --panel B --outdir .
+# 2. Aggregator builds the consensus from the explicit per-site selections
+#    (--min-sites 1 = union of all selections). -> consensus_panelB_features.csv
+oadr-cpep consensus-features --min-sites 1 \
+  --features SDY524_panelB_selected_features.csv \
+  --features SDY569_panelB_selected_features.csv
 
-# 3. Each site fits all three methods (or call fit-ridge / fit-lasso / fit-rf
-#    separately). Every output is tagged with the feature source (here: consensus)
-#    so you see what was used and nothing overwrites — per method:
-#      <site>_from-consensus_panelB_ridge_vector.csv, _ridge_fit_metrics.csv,
-#      _ridge_fit.{png,svg,html}   (and _lasso_*, _rf*)
-oadr-cpep fit-models --site SDY524  --panel B --data-root data --features consensus_panelB_features.csv
-oadr-cpep fit-models --site SDY569  --panel B --data-root data --features consensus_panelB_features.csv
-oadr-cpep fit-models --site SDY1737 --panel B --data-root data --features consensus_panelB_features.csv
+# 3. Each site fits all three methods on the chosen feature set (its own 5 files).
+#    Outputs are tagged with the feature source (here 'consensus'), e.g.
+#    <site>_from-consensus_panelB_{ridge,lasso}_vector.csv, _rf.pkl (+ metrics + graphics)
+oadr-cpep fit-models --site SDY524 --panel B --features consensus_panelB_features.csv \
+  --aa data/aa_524.csv --demo data/demo_524.csv --cpeptide data/SDY524_cpeptide_auc_tidy.csv \
+  --arms data/SDY524_arm_or_cohort.txt --arm-subjects data/SDY524_arm_2_subject.txt
+oadr-cpep fit-models --site SDY569 --panel B --features consensus_panelB_features.csv \
+  --aa data/aa_569.csv --demo data/demo_569.csv --cpeptide data/SDY569_cpeptide_auc_tidy.csv \
+  --arms data/SDY569_arm_or_cohort.txt --arm-subjects data/SDY569_arm_2_subject.txt
 
-# 4. Aggregator combines the vectors (FedAvg) + union of forests -> federated_panelB_ridge_fedavg_vector.csv
-oadr-cpep aggregate-vectors --input-dir . --panel B --method fedavg --outdir .
+# 4. Aggregator combines the explicit per-site vectors + forests (FedAvg + union of
+#    forests). The from-/panel tags are derived from the files themselves ->
+#    federated_from-consensus_panelB_{ridge,lasso}_fedavg_vector.csv, _rf_union.pkl
+oadr-cpep aggregate-vectors --method fedavg \
+  --vector SDY524_from-consensus_panelB_ridge_vector.csv --vector SDY569_from-consensus_panelB_ridge_vector.csv \
+  --vector SDY524_from-consensus_panelB_lasso_vector.csv --vector SDY569_from-consensus_panelB_lasso_vector.csv \
+  --vector SDY524_from-consensus_panelB_rf.pkl           --vector SDY569_from-consensus_panelB_rf.pkl
 
-# 5. Each site's OWN outcome using the federated results — all three methods
-#    (ridge/lasso vectors + rf union, auto-discovered from --coefficients-dir).
-#    Writes <site>_panelB_federated_metrics.csv (solo vs federated per method)
-#    and <site>_panelB_federated.{png,svg,html} (3 methods x solo|federated).
-oadr-cpep apply-coefficients --site SDY524  --panel B --data-root data --coefficients-dir .
-oadr-cpep apply-coefficients --site SDY569  --panel B --data-root data --coefficients-dir .
-oadr-cpep apply-coefficients --site SDY1737 --panel B --data-root data --coefficients-dir .
+# 5. Each site's OWN outcome using the federated results — pass them explicitly.
+#    -> <site>_panelB_federated_metrics.csv (solo vs federated) + _federated.{png,svg,html}
+oadr-cpep apply-coefficients --site SDY524 --panel B \
+  --aa data/aa_524.csv --demo data/demo_524.csv --cpeptide data/SDY524_cpeptide_auc_tidy.csv \
+  --arms data/SDY524_arm_or_cohort.txt --arm-subjects data/SDY524_arm_2_subject.txt \
+  --ridge-vector federated_from-consensus_panelB_ridge_fedavg_vector.csv \
+  --lasso-vector federated_from-consensus_panelB_lasso_fedavg_vector.csv \
+  --rf-union     federated_from-consensus_panelB_rf_union.pkl
 ```
 
-Because every command is scoped with `--panel`, Panel A and Panel B runs can
-share one working directory without ever mixing. In a real federated deployment
-each site runs its own steps at its own institution (it only ever has its own
-data); the aggregator sees only the parameter files — never subject-level data.
-Here you drive all sites from one machine for testing.
+**Panel A** needs only two files — swap the five Panel-B files for
+`--tidy data/SDY524_tidy.csv --cpeptide data/SDY524_cpeptide_auc_tidy.csv`.
+
+The site commands take `--panel`; the aggregator derives the panel (and feature
+source) from the files themselves and refuses to mix them — so Panel A and Panel B
+runs can share a working directory. In a real federated deployment each site runs
+its own steps at its own institution (only ever its own data); the aggregator sees
+only the parameter files — never subject-level data.
 
 ### Single-site (bespoke) consensus
 
@@ -113,7 +135,9 @@ agreement, use that site's selection *as* the consensus — honest and
 reproducible — instead of relying on a tally threshold:
 
 ```bash
-oadr-cpep consensus-features --input-dir . --panel B --from-site SDY524 --outdir .
+oadr-cpep consensus-features --from-site SDY524 \
+  --features SDY524_panelB_selected_features.csv \
+  --features SDY569_panelB_selected_features.csv
 #   -> consensus_panelB_features.csv = exactly SDY524's selected features
 ```
 
@@ -122,22 +146,113 @@ is unchanged — it just proceeds on that singular feature set. (Equivalently, y
 can skip the consensus step and feed one site's list straight in:
 `fit-models … --features SDY524_panelB_selected_features.csv`.)
 
-### Scoping to one feature source (`--from`)
+### Feature-source tags (`from-<src>`)
 
-Fit outputs are stamped with the feature source (`<site>_from-SDY524_panelB_…`).
-When several sources coexist in one directory — e.g. you fit some sites on
-SDY524's features and others on their own — scope the aggregate and apply with
-`--from` so nothing mixes, and the federated files say which source they're built
-on:
+Every fit output is stamped with the feature source it was fit on
+(`<site>_from-<src>_panelB_…`, where `<src>` is the leading token of the
+`--features` filename). To combine several sites on **one** feature source, fit
+them all on the *same* features file, then hand those vectors to
+`aggregate-vectors` — it reads the `from-<src>` / `panel` provenance **from the
+files**, tags its output the same way, and errors if you mix sources or panels.
+
+Example — aggregate SDY524 **and** SDY569, both fit on **SDY524's** features:
 
 ```bash
-# combine only the vectors/forests fit on SDY524's features
-oadr-cpep aggregate-vectors --input-dir . --panel B --from SDY524 --method fedavg --outdir .
-#   -> federated_from-SDY524_panelB_ridge_fedavg_vector.csv  (+ lasso, rf_union)
+# fit EACH site on SDY524's features  ->  <site>_from-SDY524_panelB_*
+oadr-cpep fit-models --site SDY524 --panel B --outdir fit \
+    --features SDY524_panelB_selected_features.csv \
+    --aa data/aa_524.csv --demo data/demo_524.csv --cpeptide data/SDY524_cpeptide_auc_tidy.csv \
+    --arms data/SDY524_arm_or_cohort.txt --arm-subjects data/SDY524_arm_2_subject.txt
+oadr-cpep fit-models --site SDY569 --panel B --outdir fit \
+    --features SDY524_panelB_selected_features.csv \
+    --aa data/aa_569.csv --demo data/demo_569.csv --cpeptide data/SDY569_cpeptide_auc_tidy.csv \
+    --arms data/SDY569_arm_or_cohort.txt --arm-subjects data/SDY569_arm_2_subject.txt
 
-# SDY524's own outcome, tuned with those federated results (all three methods)
-oadr-cpep apply-coefficients --site SDY524 --panel B --data-root data --coefficients-dir . --from SDY524
+# combine the explicit vectors/forests (from-SDY524 derived from the files)
+oadr-cpep aggregate-vectors --method fedavg --outdir aggregated \
+    --vector fit/SDY524_from-SDY524_panelB_ridge_vector.csv --vector fit/SDY569_from-SDY524_panelB_ridge_vector.csv \
+    --vector fit/SDY524_from-SDY524_panelB_lasso_vector.csv --vector fit/SDY569_from-SDY524_panelB_lasso_vector.csv \
+    --vector fit/SDY524_from-SDY524_panelB_rf.pkl           --vector fit/SDY569_from-SDY524_panelB_rf.pkl
+#   -> aggregated/federated_from-SDY524_panelB_ridge_fedavg_vector.csv  (+ lasso, rf_union)
+
+# SDY524's own outcome, tuned with those federated results — pass them explicitly
+oadr-cpep apply-coefficients --site SDY524 --panel B \
+    --aa data/aa_524.csv --demo data/demo_524.csv --cpeptide data/SDY524_cpeptide_auc_tidy.csv \
+    --arms data/SDY524_arm_or_cohort.txt --arm-subjects data/SDY524_arm_2_subject.txt \
+    --ridge-vector aggregated/federated_from-SDY524_panelB_ridge_fedavg_vector.csv \
+    --lasso-vector aggregated/federated_from-SDY524_panelB_lasso_fedavg_vector.csv \
+    --rf-union     aggregated/federated_from-SDY524_panelB_rf_union.pkl
 ```
+
+Hand `aggregate-vectors` vectors fit on *different* sources and it stops with
+`mix feature sources` — pass one source's vectors at a time.
+
+## Method — this implementation vs. the notebook spec
+
+The math here is deliberately *not* identical to the
+[oadr-autoantibody](https://github.com/NIH-NLM/oadr-autoantibody/tree/main/ipynb)
+Stage-2 notebooks. Both use **FedAvg**; they differ in *where the average is
+formed and how the federated arm is scored*. The difference is small in numbers
+but matters for how you describe the result, so it is spelled out here.
+
+**Notation.** Site `s` holds `(X_s, y_s)` with `N_s` subjects and fits a full-data
+model → coefficient vector `β_s` (Ridge/LASSO) or forest `F_s` (RF). Only `β_s`
+/ `F_s` ever leave the site — never `(X_s, y_s)`.
+
+**`aggregate-vectors` — FedAvg (central).** The coordinator forms **one** vector,
+weighted by cohort size:
+
+```
+β̄ = ( Σ_s N_s · β_s ) / ( Σ_s N_s )        # method=fedavg (size-weighted mean)
+                                            # method=median / mean = unweighted
+RF: F̄ = union of the per-site forests F_s  # trees concatenated, not averaged
+```
+
+**`apply-coefficients` — solo vs. federated at site `s` (5-fold CV).**
+
+- *Solo* — for each fold, refit `β_s^(train)` on the training rows and predict the
+  held-out rows. **Out-of-fold** → honest.
+- *Federated (this implementation)* — take the **fixed** central `β̄` from the
+  aggregator; for each fold, scale the held-out rows with the training-fold scaler
+  and predict with `β̄`. `β̄` is **not** refit per fold.
+
+**How the notebooks differ.** The notebooks form the federated vector **inside
+each fold**, re-fitting the site out-of-fold and averaging with the *partner*
+vectors only:
+
+```
+notebook (per fold k):  β_fed^(k) = ( N_train·β_s^(train,k) + Σ_{p≠s} N_p·β_p )
+                                    / ( N_train + Σ_{p≠s} N_p )
+this repo (all folds):  β_fed      = β̄ = ( N_s·β_s + Σ_{p≠s} N_p·β_p )
+                                    / ( N_s + Σ_{p≠s} N_p )
+```
+
+Two concrete differences:
+
+1. **Site's own contribution** — full-data `β_s` here vs. the training-fold
+   `β_s^(train,k)` in the notebook.
+2. **When it's formed** — a single fixed `β̄` here vs. recomputed every fold there.
+
+**Consequence (read this before quoting numbers).** Because `β̄` contains the
+site's *full-data* `β_s`, the federated arm's coefficients partly *saw* the
+held-out rows they are scored on — a mild optimism (leakage) that the notebook's
+out-of-fold refit avoids. So the solo→federated gap here mixes **two** effects:
+genuine partner signal, *and* the federated arm using more of the site's own data
+than the fold-refit solo arm. Frame the result as **"the deployed federated model
+vs. the site's solo model,"** which is exactly true — not as "partner *X* improves
+site *Y* by Δ," which over-attributes the gap. For a contrast that isolates the
+partner contribution, use the notebook's per-fold, out-of-fold method.
+
+**Why this implementation still chooses central-apply.** The model you actually
+*deploy* is `β̄` — the single artifact that scores a new patient — and in a real
+federated deployment (e.g. sites in separate Lifebit workspaces) each site needs
+only that one central vector, not every partner's individual vector. Applying
+`β̄` as-is is therefore both deployment-faithful and simplest to run federated.
+
+**Why not "blend."** An earlier option mixed the site's own vector back in,
+`w·β_s + (1−w)·β̄`. Since `β̄` *already* contains `β_s`, that counts the site
+twice (double-counting) — so it was removed. Note the notebook's per-fold average
+is **not** a blend: it combines `β_s^(train)` with the *partners*, each study once.
 
 ## Container
 

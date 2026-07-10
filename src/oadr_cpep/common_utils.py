@@ -6,7 +6,6 @@ scaling, cross-validation, and metrics. No step logic and no plotting live here
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,10 +15,11 @@ from sklearn.preprocessing import MinMaxScaler
 from . import oadr_data as od
 
 
-def load_site(site, panel, data_root):
-    """Load one study + panel through oadr_data -> (frame, feature_names, target)."""
-    od._DATA = Path(data_root)
-    return od.load_features(site, panel)
+def load_site(site, panel, *, tidy=None, aa=None, demo=None,
+              cpeptide=None, arms=None, arm_subjects=None):
+    """Load one study + panel from explicit file paths -> (frame, feature_names, target)."""
+    return od.load_features(site, panel, tidy=tidy, aa=aa, demo=demo,
+                            cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
 
 
 def read_feature_list(features):

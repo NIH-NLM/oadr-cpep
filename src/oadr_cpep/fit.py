@@ -48,10 +48,12 @@ def _write_metrics(path, site, panel, method, feats, n, mse, r2, ci, source, ext
     pd.DataFrame([row]).to_csv(path, index=False)
 
 
-def fit_ridge(site, panel="B", features=None, data_root=".", outdir=".",
+def fit_ridge(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
+              cpeptide=None, arms=None, arm_subjects=None, outdir=".",
               alpha=1.0, n_boot=2000, seed=42):
     """Fit Ridge(alpha) on the feature set -> coefficient vector, CV metrics, graphic."""
-    frame, _all, target = cu.load_site(site, panel, data_root)
+    frame, _all, target = cu.load_site(site, panel, tidy=tidy, aa=aa, demo=demo,
+                                       cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
     feats, src, tag = cu.read_feature_list(features)
     p = panel.upper(); stem = cu.stem(site, panel, tag)
     y = frame[target].astype(float).values
@@ -74,10 +76,12 @@ def fit_ridge(site, panel="B", features=None, data_root=".", outdir=".",
     logger.info(f"  ridge: 5-fold CV  MSE={mse:.3f}  R2={r2:+.3f}  -> {stem}_ridge_fit.(png|svg|html)")
 
 
-def fit_lasso(site, panel="B", features=None, data_root=".", outdir=".",
+def fit_lasso(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
+              cpeptide=None, arms=None, arm_subjects=None, outdir=".",
               alpha=0.008, n_boot=2000, seed=42):
     """Fit Lasso(alpha) on the feature set -> coefficient vector, CV metrics, graphic."""
-    frame, _all, target = cu.load_site(site, panel, data_root)
+    frame, _all, target = cu.load_site(site, panel, tidy=tidy, aa=aa, demo=demo,
+                                       cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
     feats, src, tag = cu.read_feature_list(features)
     p = panel.upper(); stem = cu.stem(site, panel, tag)
     y = frame[target].astype(float).values
@@ -100,10 +104,12 @@ def fit_lasso(site, panel="B", features=None, data_root=".", outdir=".",
     logger.info(f"  lasso: 5-fold CV  MSE={mse:.3f}  R2={r2:+.3f}  -> {stem}_lasso_fit.(png|svg|html)")
 
 
-def fit_rf(site, panel="B", features=None, data_root=".", outdir=".",
+def fit_rf(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
+           cpeptide=None, arms=None, arm_subjects=None, outdir=".",
            n_trees=200, n_boot=2000, seed=42):
     """Fit a Random Forest on the feature set -> forest pickle, CV metrics, graphic."""
-    frame, _all, target = cu.load_site(site, panel, data_root)
+    frame, _all, target = cu.load_site(site, panel, tidy=tidy, aa=aa, demo=demo,
+                                       cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
     feats, src, tag = cu.read_feature_list(features)
     p = panel.upper(); stem = cu.stem(site, panel, tag)
     y = frame[target].astype(float).values
@@ -130,9 +136,11 @@ def fit_rf(site, panel="B", features=None, data_root=".", outdir=".",
     logger.info(f"  rf: 5-fold CV  MSE={mse:.3f}  R2={r2:+.3f}  -> {stem}_rf_fit.(png|svg|html)")
 
 
-def fit_models(site, panel="B", features=None, data_root=".", outdir=".",
+def fit_models(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
+               cpeptide=None, arms=None, arm_subjects=None, outdir=".",
                ridge_alpha=1.0, lasso_alpha=0.008, n_trees=200, n_boot=2000, seed=42):
     """Convenience: run fit_ridge, fit_lasso, fit_rf on the same feature set."""
-    fit_ridge(site, panel, features, data_root, outdir, ridge_alpha, n_boot, seed)
-    fit_lasso(site, panel, features, data_root, outdir, lasso_alpha, n_boot, seed)
-    fit_rf(site, panel, features, data_root, outdir, n_trees, n_boot, seed)
+    files = dict(tidy=tidy, aa=aa, demo=demo, cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
+    fit_ridge(site, panel, features, outdir=outdir, alpha=ridge_alpha, n_boot=n_boot, seed=seed, **files)
+    fit_lasso(site, panel, features, outdir=outdir, alpha=lasso_alpha, n_boot=n_boot, seed=seed, **files)
+    fit_rf(site, panel, features, outdir=outdir, n_trees=n_trees, n_boot=n_boot, seed=seed, **files)

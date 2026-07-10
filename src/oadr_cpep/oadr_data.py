@@ -1,52 +1,33 @@
 """
-Shared data loaders for OADR autoantibody work — ported verbatim from the
-oadr-autoantibody repo (src/oadr_data.py) so oadr-cpep reads exactly the same
-ImmPort-derived inputs and builds Panel A / Panel B the same way.
+Shared data loaders for OADR autoantibody work — ported from the oadr-autoantibody
+repo (src/oadr_data.py) so oadr-cpep builds Panel A / Panel B exactly the same way.
 
-Only change from the source: the data root is configurable (env var
-OADR_DATA_ROOT, or set ``oadr_data._DATA`` before calling) instead of being
-derived from the repo location, plus a ``load_features(study, panel)`` helper,
-and a flat-first file resolver for the AWS-spot / Nextflow work dir.
+Change from the source: instead of finding files by name under a data root, every
+loader takes the **explicit file paths** it needs — nothing is guessed. The CLI
+hands each command its precise input files; this module reads them and parses.
 
 Two feature panels:
 
     Panel A (legacy, 9 features): MIAA, GAD65, IA2IC, ICA, ZNT8, 8-12, 13-17,
     >18, Sex. Studies: SDY524, SDY569, SDY797, SDY1737.
+    Files: SDY<n>_tidy.csv (features), SDY<n>_cpeptide_auc_tidy.csv (target).
 
     Panel B (extended): Sex, age_years, disease_duration_years, bmi, height_cm,
     weight_kg, GAD65, IA2IC, MIAA, ZNT8, ICA, received_active_treatment.
     Studies: SDY524, SDY569, SDY1737 only (no extended data for SDY797).
+    Files: aa_<n>.csv, demo_<n>.csv, SDY<n>_cpeptide_auc_tidy.csv,
+    SDY<n>_arm_or_cohort.txt, SDY<n>_arm_2_subject.txt (arms optional).
 
 Target for both: log(C_Peptide_AUC_4Hrs) = log_auc.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# Data root: env var OADR_DATA_ROOT, else the current dir. In the Nextflow /
-# AWS-spot world every input file is staged FLAT into the process work dir, so
-# the default is "." and files are found by name. The CLI overrides this by
-# setting oadr_data._DATA = Path(data_root) before calling the loaders.
-_DATA = Path(os.environ.get("OADR_DATA_ROOT", "."))
-
-
-def _resolve(name, subdir=None):
-    """Locate a data file. Look FLAT under _DATA first (the layout Nextflow
-    stages on AWS), then fall back to <subdir>/ (the original nested repo tree).
-    Returns the flat path if neither exists so pandas raises a clear error."""
-    flat = _DATA / name
-    if flat.exists():
-        return flat
-    if subdir is not None:
-        nested = _DATA / subdir / name
-        if nested.exists():
-            return nested
-    return flat
 
 PANEL_A_FEATURES = [
     "MIAA", "GAD65", "IA2IC", "ICA", "ZNT8",
@@ -83,9 +64,9 @@ def _normalize_age_group(a: str) -> str:
     return a
 
 
-def _read_cpeptide(study: str) -> pd.DataFrame:
-    """Load c-peptide AUC tidy file; normalize columns to (Subject_ID, C_Peptide_AUC_4Hrs)."""
-    df = pd.read_csv(_resolve(f"{study}_cpeptide_auc_tidy.csv"))
+def _read_cpeptide(path) -> pd.DataFrame:
+    """Load a c-peptide AUC tidy file; normalize columns to (Subject_ID, C_Peptide_AUC_4Hrs)."""
+    df = pd.read_csv(path)
     rename = {
         "ImmPort Accession": "Subject_ID",
         "Subject_IDel": "Subject_ID",  # SDY569 typo
@@ -95,8 +76,8 @@ def _read_cpeptide(study: str) -> pd.DataFrame:
     return df[["Subject_ID", "C_Peptide_AUC_4Hrs"]]
 
 
-def load_panel_a(study: str) -> pd.DataFrame:
-    """Build the 9-feature panel for one study.
+def load_panel_a(study, tidy_path, cpeptide_path) -> pd.DataFrame:
+    """Build the 9-feature panel for one study from its explicit files.
 
     Returns a DataFrame with columns:
         Subject_ID, Study, <PANEL_A_FEATURES>, C_Peptide_AUC_4Hrs, log_auc
@@ -105,7 +86,7 @@ def load_panel_a(study: str) -> pd.DataFrame:
     if study not in PANEL_A_STUDIES:
         raise ValueError(f"Unknown study {study!r} for Panel A")
 
-    feat = pd.read_csv(_resolve(f"{study}_tidy.csv"))
+    feat = pd.read_csv(tidy_path)
     feat = feat.rename(columns={"Accession": "Subject_ID"})
     feat["Property"] = feat["Property"].map(_normalize_property)
     feat["Age_Group"] = feat["Age_Group"].astype(str).map(_normalize_age_group)
@@ -133,7 +114,7 @@ def load_panel_a(study: str) -> pd.DataFrame:
     })
     wide = wide.merge(age[["Subject_ID", "8-12", "13-17", ">18"]], on="Subject_ID", how="left")
 
-    cpep = _read_cpeptide(study)
+    cpep = _read_cpeptide(cpeptide_path)
     df = wide.merge(cpep, on="Subject_ID", how="inner")
 
     for ab in ("MIAA", "GAD65", "IA2IC", "ICA", "ZNT8"):
@@ -154,29 +135,23 @@ _JEFF_AA_MAP = {
     "miaa": "MIAA",
     "zn_t8": "ZNT8",
 }
-_JEFF_STUDY_FILES = {
-    "SDY524": ("aa_524.csv", "demo_524.csv"),
-    "SDY569": ("aa_569.csv", "demo_569.csv"),
-    "SDY1737": ("aa_1737.csv", "demo_1737.csv"),
-}
 
 
-def _treatment_from_arms(study, subject_ids):
+def _treatment_from_arms(arms_path, arm_subjects_path, subject_ids):
     """Per-subject active-treatment flag by transitive closure: subject -> arm
-    (<study>_arm_2_subject.txt) -> treatment, where the control arm is identified
-    by name/description (placebo / control / no treatment) and the treatment arm
-    is the other. Works across drugs (hOKT3, teplizumab, alefacept). If a study
-    has no control arm (e.g. SDY1737, arms are age groups) treatment is
-    undetermined and all subjects are 0. Returns a 0/1 Series aligned to
-    subject_ids."""
-    arm_file = _resolve(f"{study}_arm_or_cohort.txt", "arms")
-    a2s_file = _resolve(f"{study}_arm_2_subject.txt", "arms")
+    (arm_2_subject) -> treatment, where the control arm is identified by
+    name/description (placebo / control / no treatment) and the treatment arm is
+    the other. Works across drugs (hOKT3, teplizumab, alefacept). If the arm files
+    are not supplied (or a study has no control arm, e.g. SDY1737 arms are age
+    groups) treatment is undetermined and all subjects are 0. Returns a 0/1 Series
+    aligned to subject_ids."""
     subject_ids = list(subject_ids)
     zero = pd.Series([0.0] * len(subject_ids))
-    if not (arm_file.exists() and a2s_file.exists()):
-        return zero
-    arms = pd.read_csv(arm_file, sep="\t")
-    a2s = pd.read_csv(a2s_file, sep="\t")
+    if not (arms_path and arm_subjects_path
+            and Path(arms_path).exists() and Path(arm_subjects_path).exists()):
+        return zero                      # arm files not provided -> treatment undetermined
+    arms = pd.read_csv(arms_path, sep="\t")
+    a2s = pd.read_csv(arm_subjects_path, sep="\t")
     ctrl_pat = "placebo|control|no treatment"
     ctrl_mask = (arms["NAME"].str.contains(ctrl_pat, case=False, na=False)
                  | arms["DESCRIPTION"].str.contains(ctrl_pat, case=False, na=False))
@@ -193,8 +168,9 @@ def _parse_date(s):
     return pd.to_datetime(s, errors="coerce")
 
 
-def load_panel_b(study: str) -> pd.DataFrame:
-    """Build the extended feature panel for one study.
+def load_panel_b(study, aa_path, demo_path, cpeptide_path,
+                 arms_path=None, arm_subjects_path=None) -> pd.DataFrame:
+    """Build the extended feature panel for one study from its explicit files.
 
     Columns returned:
         Subject_ID, Study, Sex, age_years, disease_duration_years,
@@ -205,9 +181,8 @@ def load_panel_b(study: str) -> pd.DataFrame:
     if study not in PANEL_B_STUDIES:
         raise ValueError(f"Study {study!r} has no extended-panel data")
 
-    aa_file, demo_file = _JEFF_STUDY_FILES[study]
-    aa = pd.read_csv(_resolve(aa_file, "Jeff"))
-    demo = pd.read_csv(_resolve(demo_file, "Jeff"))
+    aa = pd.read_csv(aa_path)
+    demo = pd.read_csv(demo_path)
 
     aa = aa.rename(columns={"accession": "Subject_ID", **_JEFF_AA_MAP})
     for ab in ("GAD65", "IA2IC", "MIAA", "ZNT8", "ICA"):
@@ -244,12 +219,12 @@ def load_panel_b(study: str) -> pd.DataFrame:
                  "race", "ethnicity", "cohort_group"]
     demo = demo[[c for c in keep_demo if c in demo.columns]]
 
-    cpep = _read_cpeptide(study)
+    cpep = _read_cpeptide(cpeptide_path)
 
     df = aa.merge(demo, on="Subject_ID", how="inner").merge(cpep, on="Subject_ID", how="inner")
     df["log_auc"] = np.log(df["C_Peptide_AUC_4Hrs"])
     df["Study"] = study
-    df["received_active_treatment"] = _treatment_from_arms(study, df["Subject_ID"]).values
+    df["received_active_treatment"] = _treatment_from_arms(arms_path, arm_subjects_path, df["Subject_ID"]).values
 
     cols = (["Subject_ID", "Study", "Sex", "age_years", "disease_duration_years",
              "bmi", "height_cm", "weight_kg",
@@ -288,17 +263,29 @@ def panel_a_design_matrix(df: pd.DataFrame):
     return df[PANEL_A_FEATURES].astype(float), df[PANEL_A_TARGET].astype(float), list(PANEL_A_FEATURES)
 
 
-def load_features(study: str, panel: str):
-    """Return (frame, feature_names, target) for one study + panel, with the same
-    within-study cleanup the notebooks apply. ``frame`` has the feature columns
-    plus the log_auc target (and Subject_ID). Panel A -> 9 legacy features;
-    Panel B -> the canonical 12 extended features (race/ethnicity dropped)."""
+def _require(**named):
+    """Raise a clear error naming any required input file that wasn't provided."""
+    missing = [f"--{k.replace('_', '-')}" for k, v in named.items() if v is None]
+    if missing:
+        raise ValueError("missing required input file(s): " + ", ".join(missing))
+
+
+def load_features(study, panel, *, tidy=None, aa=None, demo=None,
+                  cpeptide=None, arms=None, arm_subjects=None):
+    """Return (frame, feature_names, target) for one study + panel from explicit
+    file paths, with the same within-study cleanup the notebooks apply. ``frame``
+    has the feature columns plus the log_auc target (and Subject_ID). Panel A -> 9
+    legacy features (needs ``tidy`` + ``cpeptide``); Panel B -> the canonical 12
+    extended features (needs ``aa`` + ``demo`` + ``cpeptide``; ``arms`` +
+    ``arm_subjects`` optional)."""
     panel = panel.upper()
     if panel == "A":
-        a = load_panel_a(study)
+        _require(tidy=tidy, cpeptide=cpeptide)
+        a = load_panel_a(study, tidy, cpeptide)
         return a, list(PANEL_A_FEATURES), PANEL_A_TARGET
     if panel == "B":
-        b = load_panel_b(study)
+        _require(aa=aa, demo=demo, cpeptide=cpeptide)
+        b = load_panel_b(study, aa, demo, cpeptide, arms, arm_subjects)
         # within-study cleanup (this study's own median; per-row height repair)
         for col in ("bmi", "height_cm", "weight_kg"):
             b[col] = b[col].fillna(b[col].median())
