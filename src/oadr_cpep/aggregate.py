@@ -110,6 +110,8 @@ def aggregate_vectors(vectors, method="fedavg", outdir="."):
     frames = {}
     for f in (x for x in files if x.endswith(".csv")):
         d = pd.read_csv(f)
+        if "feature" not in d.columns or "coefficient" not in d.columns:
+            continue   # not a coefficient vector (e.g. a *_fit_metrics.csv) — skip
         m = str(d["method"].iloc[0]).lower() if "method" in d.columns else "ridge"
         frames.setdefault(m, []).append((f, d))
         if "panel" in d.columns and len(d):
