@@ -10,7 +10,9 @@ A single typer app, one thin wrapper per single-function step:
   aggregator : consensus-features, aggregate-vectors
 
 Every step takes its inputs as EXPLICIT files — no directories, no globs, nothing
-resolved by name. The site steps read a study's data files by panel:
+resolved by name — and writes its outputs to the current working directory (no
+output-dir option; under Nextflow that's the process work dir, published by
+publishDir). The site steps read a study's data files by panel:
   Panel A : --tidy, --cpeptide
   Panel B : --aa, --demo, --cpeptide, --arms, --arm-subjects  (arms optional)
 """
@@ -62,11 +64,10 @@ def select_features_command(
     cpeptide: Optional[Path] = _CPEP,
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
-    outdir: Path = typer.Option(".", help="Output directory"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 1 (site): LASSO selects features on this site's own data (alpha chosen by CV)."""
-    _select_features(site=site, panel=panel, outdir=str(outdir), seed=seed,
+    _select_features(site=site, panel=panel, seed=seed,
                      **_files(tidy, aa, demo, cpeptide, arms, arm_subjects))
 
 
@@ -82,13 +83,12 @@ def fit_ridge_command(
     cpeptide: Optional[Path] = _CPEP,
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
-    outdir: Path = typer.Option(".", help="Output directory"),
     alpha: float = typer.Option(1.0, help="Ridge L2 penalty"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the R² 95% CI"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 2 (site): fit Ridge on a given feature set (vector + CV metrics + graphic)."""
-    _fit_ridge(site=site, panel=panel, features=str(features), outdir=str(outdir),
+    _fit_ridge(site=site, panel=panel, features=str(features),
                alpha=alpha, n_boot=n_boot, seed=seed,
                **_files(tidy, aa, demo, cpeptide, arms, arm_subjects))
 
@@ -104,13 +104,12 @@ def fit_lasso_command(
     cpeptide: Optional[Path] = _CPEP,
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
-    outdir: Path = typer.Option(".", help="Output directory"),
     alpha: float = typer.Option(0.008, help="LASSO L1 penalty"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the R² 95% CI"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 2 (site): fit LASSO on a given feature set (vector + CV metrics + graphic)."""
-    _fit_lasso(site=site, panel=panel, features=str(features), outdir=str(outdir),
+    _fit_lasso(site=site, panel=panel, features=str(features),
                alpha=alpha, n_boot=n_boot, seed=seed,
                **_files(tidy, aa, demo, cpeptide, arms, arm_subjects))
 
@@ -126,13 +125,12 @@ def fit_rf_command(
     cpeptide: Optional[Path] = _CPEP,
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
-    outdir: Path = typer.Option(".", help="Output directory"),
     n_trees: int = typer.Option(200, help="Random Forest trees"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the R² 95% CI"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 2 (site): fit a Random Forest on a given feature set (forest + CV metrics + graphic)."""
-    _fit_rf(site=site, panel=panel, features=str(features), outdir=str(outdir),
+    _fit_rf(site=site, panel=panel, features=str(features),
             n_trees=n_trees, n_boot=n_boot, seed=seed,
             **_files(tidy, aa, demo, cpeptide, arms, arm_subjects))
 
@@ -148,7 +146,6 @@ def fit_models_command(
     cpeptide: Optional[Path] = _CPEP,
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
-    outdir: Path = typer.Option(".", help="Output directory"),
     ridge_alpha: float = typer.Option(1.0, help="Ridge L2 penalty"),
     lasso_alpha: float = typer.Option(0.008, help="LASSO L1 penalty"),
     n_trees: int = typer.Option(200, help="Random Forest trees"),
@@ -156,7 +153,7 @@ def fit_models_command(
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 2 (site): convenience — runs fit-ridge, fit-lasso, fit-rf on the same feature set."""
-    _fit_models(site=site, panel=panel, features=str(features), outdir=str(outdir),
+    _fit_models(site=site, panel=panel, features=str(features),
                 ridge_alpha=ridge_alpha, lasso_alpha=lasso_alpha,
                 n_trees=n_trees, n_boot=n_boot, seed=seed,
                 **_files(tidy, aa, demo, cpeptide, arms, arm_subjects))
@@ -179,7 +176,6 @@ def apply_coefficients_command(
     ridge_alpha: float = typer.Option(1.0, help="Ridge L2 penalty for the solo model"),
     lasso_alpha: float = typer.Option(0.008, help="LASSO L1 penalty for the solo model"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the R² 95% CI"),
-    outdir: Path = typer.Option(".", help="Output directory"),
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 3 (site): this site's own outcome using the federated results (solo vs federated)."""
@@ -188,8 +184,7 @@ def apply_coefficients_command(
         ridge_vector=str(ridge_vector) if ridge_vector else None,
         lasso_vector=str(lasso_vector) if lasso_vector else None,
         rf_union=str(rf_union) if rf_union else None,
-        ridge_alpha=ridge_alpha, lasso_alpha=lasso_alpha,
-        n_boot=n_boot, outdir=str(outdir), seed=seed,
+        ridge_alpha=ridge_alpha, lasso_alpha=lasso_alpha, n_boot=n_boot, seed=seed,
         **_files(tidy, aa, demo, cpeptide, arms, arm_subjects),
     )
 
@@ -200,11 +195,9 @@ def consensus_features_command(
     features: List[Path] = typer.Option(..., "--features", help="Per-site selected-features CSV (repeat --features for each site)"),
     min_sites: Optional[int] = typer.Option(None, help="Keep features chosen by >= this many sites (default: majority)"),
     from_site: Optional[str] = typer.Option(None, help="Use ONE site's selection as the consensus (single-site, bespoke)"),
-    outdir: Path = typer.Option(".", help="Output directory"),
 ):
     """Phase 1 (aggregator): build the consensus feature set (multi-site tally, or --from-site)."""
-    _consensus_features(features=[str(f) for f in features], min_sites=min_sites,
-                        from_site=from_site, outdir=str(outdir))
+    _consensus_features(features=[str(f) for f in features], min_sites=min_sites, from_site=from_site)
 
 
 # ------------------------------------------------------------ aggregator: Phase 2
@@ -212,10 +205,9 @@ def consensus_features_command(
 def aggregate_vectors_command(
     vector: List[Path] = typer.Option(..., "--vector", help="Per-site coefficient vector CSV or RF .pkl (repeat --vector for each)"),
     method: str = typer.Option("fedavg", help="Combine rule: fedavg | median | mean"),
-    outdir: Path = typer.Option(".", help="Output directory"),
 ):
     """Phase 2 (aggregator): combine the site coefficient vectors / forests (solo vs federated)."""
-    _aggregate_vectors(vectors=[str(f) for f in vector], method=method, outdir=str(outdir))
+    _aggregate_vectors(vectors=[str(f) for f in vector], method=method)
 
 
 def main():
