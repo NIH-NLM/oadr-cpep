@@ -10,7 +10,6 @@ forests), with bootstrap 95% CIs. The graphic is drawn by plot.solo_vs_federated
 """
 from __future__ import annotations
 
-import glob
 import os
 import pickle
 
@@ -72,44 +71,28 @@ def _rf_job(path):
             "sites": ";".join(u.get("sites", []))}
 
 
-def _jobs(panel, coefficients, coefficients_dir, method, from_features):
-    """Assemble method jobs from a single vector/pickle or a directory of federated
-    results (ridge + lasso vectors + rf union), scoped by panel/from."""
-    jobs = []
-    if coefficients_dir:
-        parts = []
-        if from_features:
-            parts.append(f"from-{from_features}")
-        if panel:
-            parts.append(f"panel{panel.upper()}")
-        prefix = "federated" + ("_" + "_".join(parts) if parts else "")
-        for meth in ("ridge", "lasso"):
-            f = sorted(glob.glob(os.path.join(coefficients_dir, f"{prefix}_{meth}_*_vector.csv")))
-            if f:
-                jobs.append(_linear_job(meth, f[0]))
-        rf = sorted(glob.glob(os.path.join(coefficients_dir, f"{prefix}_rf_union.pkl")))
-        if rf:
-            jobs.append(_rf_job(rf[0]))
-    elif coefficients:
-        jobs.append(_rf_job(coefficients) if str(coefficients).endswith(".pkl")
-                    else _linear_job(method, coefficients))
-    return jobs
-
-
-def apply_coefficients(site, panel="B", coefficients=None, coefficients_dir=None, data_root=".",
-                       method=None, from_features=None, ridge_alpha=1.0, lasso_alpha=0.008,
-                       n_boot=2000, outdir=".", seed=42):
-    """Produce this site's own outcome (solo vs federated) across the methods found."""
-    frame, _all, target = cu.load_site(site, panel, data_root)
+def apply_coefficients(site, panel="B", *, ridge_vector=None, lasso_vector=None, rf_union=None,
+                       tidy=None, aa=None, demo=None, cpeptide=None, arms=None, arm_subjects=None,
+                       ridge_alpha=1.0, lasso_alpha=0.008, n_boot=2000, outdir=".", seed=42):
+    """Produce this site's own outcome (solo vs federated) from explicit federated
+    artifact files (--ridge-vector / --lasso-vector / --rf-union)."""
+    frame, _all, target = cu.load_site(site, panel, tidy=tidy, aa=aa, demo=demo,
+                                       cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
     y = frame[target].astype(float).values
     n = len(y)
     p = panel.upper()
     os.makedirs(outdir, exist_ok=True)
 
-    jobs = _jobs(p, coefficients, coefficients_dir, method, from_features)
+    jobs = []
+    if ridge_vector:
+        jobs.append(_linear_job("ridge", ridge_vector))
+    if lasso_vector:
+        jobs.append(_linear_job("lasso", lasso_vector))
+    if rf_union:
+        jobs.append(_rf_job(rf_union))
     if not jobs:
-        raise SystemExit("No federated results found. Pass --coefficients <vector.csv|rf_union.pkl> "
-                         "or --coefficients-dir <dir> (scope with --panel/--from).")
+        raise SystemExit("No federated results given. Pass at least one of "
+                         "--ridge-vector / --lasso-vector / --rf-union.")
 
     kf = cu.kfold(n, seed)
     results = []
