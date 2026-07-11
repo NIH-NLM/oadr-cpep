@@ -294,7 +294,13 @@ docs/               sphinx (RTD theme) → GitHub Pages
 tests/              CLI tests
 ```
 
-# Citation
+## Companion repositories
+
+* Main Python Package: [oadr-cpep](https://github.com/NIH-NLM/oadr-cpep) (here)
+* Site specific workflow: [oadr-cpep-fed-predict-site-nf](https://github.com/NIH-NLM/oadr-cpep-fed-predict-site-nf)
+* Consensus and Aggregation specific workflow: [oadr-cpep-fed-predict-site-nf](https://github.com/NIH-NLM/oadr-cpep-fed-predict-aggregation-nf)
+
+## Citation
 
 Bhattacharya S, Dunn P, Thomas CG, Smith B, Schaefer H, Chen J, Hu Z, Zalocusky KA, Shankar RD, Shen-Orr SS, Thomson E, Wiser J, Butte AJ. ImmPort, toward repurposing of open access immunological assay data for translational and clinical research. Sci Data. 2018 Feb 27;5:180015. doi: 10.1038/sdata.2018.15. PMID: 29485622; PMCID: PMC5827693.
 
