@@ -1,3 +1,5 @@
+[![Build and Deploy Sphinx Documentation](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docs.yml/badge.svg)](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docs.yml)
+[![Build and Push Docker Image](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docker-build.yml/badge.svg)](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docker-build.yml)
 # oadr-cpep
 
 `oadr-cpep` is a Python package for **federated prediction of residual beta-cell
