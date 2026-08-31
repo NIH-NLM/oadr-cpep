@@ -30,8 +30,9 @@ One CLI (`oadr-cpep`) provides both the per-site and coordinator steps:
 | Command | Role | Does |
 |---|---|---|
 | `select-features` | site · Phase 1 | LASSO selects features on the site's own data (alpha chosen by CV) |
-| `fit-ridge` / `fit-lasso` / `fit-rf` | site · Phase 2 | fit one method on a given feature set → coefficient vector / forest + 5-fold CV MSE/R² + a fit graphic (png/svg/html) |
-| `fit-models` | site · Phase 2 | convenience — runs all three fits on the same feature set |
+| `fit-ridge` / `fit-lasso` / `fit-rf` | site · Phase 2 | fit one method on a given feature set → coefficient vector / forest + CV MSE/R²/C-index + a fit graphic (png/svg/html) |
+| `fit-logistic` | site · Phase 2 | responder classifier → **ROC AUC** (the only model here that has one) |
+| `fit-models` | site · Phase 2 | convenience — runs the three regressors, plus `--with-logistic` |
 | `apply-coefficients` | site · Phase 3 | this site's OWN outcome using the federated results — solo vs federated across Ridge/LASSO/RF (`--ridge-vector` / `--lasso-vector` / `--rf-union`), bootstrap 95% CI, combined graphic |
 | `consensus-features` | aggregator · Phase 1 | tally the given per-site selections (`--features`, repeat per site) into a consensus feature set |
 | `aggregate-vectors` | aggregator · Phase 2 | combine the given per-site vectors/forests (`--vector`, repeat per file) — FedAvg / median / mean + union of forests |
@@ -59,6 +60,13 @@ no directory, no glob, nothing resolved by name:
 | `--demo` | B | `demo_<n>.csv` (demographics) |
 | `--arms` | B (optional) | `SDY<n>_arm_or_cohort.txt` (treatment: subject → arm → treatment) |
 | `--arm-subjects` | B (optional) | `SDY<n>_arm_2_subject.txt` |
+
+Or read a **CloudOS Cohort Browser** selection instead of files, with
+`--cohort-id <id>` (the id is in the cohort's URL). The client is an optional
+dependency — `pip install 'oadr-cpep[cloudos]'` — imported only when that option
+is used, so everything below still runs locally against `data/`. Per the client's
+own requirements it must run inside a CloudOS interactive session, in the same
+workspace as the cohort, with Bastion enabled.
 
 Omitting `--arms` / `--arm-subjects` leaves `received_active_treatment`
 undetermined (0 for all) — as for SDY1737, which has no treatment arms.
@@ -188,6 +196,107 @@ oadr-cpep apply-coefficients --site SDY524 --panel B \
 
 Hand `aggregate-vectors` vectors fit on *different* sources and it stops with
 `mix feature sources` — pass one source's vectors at a time.
+
+## The JSON exchange
+
+Results move between the site workflow (`oadr-cpep-fed-predict-site-nf`) and the
+aggregator (`oadr-cpep-fed-predict-aggregator-nf`) as JSON. Add `--emit-json` to
+any fit, `--iteration N` to stamp the round, and pass the payloads straight back
+in — `aggregate-vectors --vector *.json` and `apply-coefficients --ridge-vector
+…json`.
+
+```
+site fit ──(site_fit)──▶ aggregate-vectors ──(aggregation, iteration+1)──▶ apply / re-fit ──▶ …
+```
+
+A site payload carries the weights, the hyperparameters, the preprocessing and
+the metrics:
+
+```json
+{
+  "iteration": 1, "stage": "site_fit", "site": "SDY524", "algorithm": "ridge",
+  "intercept": -0.994,
+  "coefficients": [
+    {"concept_id": 3025315, "domain_id": "Measurement",
+     "concept_name": "Body weight", "feature": "weight_kg", "coefficient": 0.762}
+  ],
+  "metrics": {"mse": 0.096, "r2": 0.307, "c_index": 0.714, "roc_auc": null},
+  "contains_patient_counts": false
+}
+```
+
+The aggregator's output increments `iteration` and records where it came from —
+every input model, at which round, and the cohorts behind them:
+
+```json
+{
+  "iteration": 2, "stage": "aggregation", "algorithm": "ridge",
+  "aggregation": {"rule": "mean", "n_sites": 2},
+  "input_models": [{"site": "SDY524", "iteration": 1, "source": "…ridge_iter1.json"}, …],
+  "cohorts": ["SDY524", "SDY569"],
+  "coefficients": [{"concept_id": 3025315, "coefficient": 0.695, "n_sites_contributing": 2}]
+}
+```
+
+Four things are worth knowing about it.
+
+**Coefficients are matched on `concept_id`, not column name.** Cohort Browser data
+arrives already mapped to OMOP, so two sites whose columns are named differently
+still combine the same clinical entity. Reading local CSVs there are no concept
+ids, so matching falls back to the feature name rather than inventing them.
+
+**No patient counts cross the boundary.** Subject counts are stripped from every
+outgoing document — including the responder/non-responder counts, which together
+would give away the cohort size (the fraction goes instead). They stay in the
+local metrics CSVs. One consequence: FedAvg has no weights to use, so it is an
+unweighted mean and says so in the output rather than claiming otherwise.
+
+**Algorithms never mix.** Ridge, LASSO, RF and the logistic models aggregate only
+against their own kind, because logistic betas are log-odds and regression betas
+are not.
+
+**Forests travel as trees, not pickles.** `--emit-json` writes every node — split
+feature, threshold, leaf value — and `apply-coefficients` predicts by traversing
+them in numpy, reconstructing no scikit-learn object. Thresholds are stored in
+the training site's original units, so a split reads as `weight_kg 52.3` rather
+than a scaled `0.41`. The traversal reproduces `RandomForestRegressor.predict`
+exactly (asserted in `tests/test_payload.py`).
+
+## Metrics — and what AUC means here
+
+| Metric | From | Meaning |
+|---|---|---|
+| `mse`, `r2` | all regressors | error and explained variance |
+| `c_index` | all regressors | Harrell's concordance: the probability the model ranks a random pair the way the truth does |
+| `roc_auc` | `fit-logistic` only | area under the ROC curve |
+
+**C-peptide AUC is not ROC AUC.** The target, `C_Peptide_AUC_4Hrs`, is area under
+a *concentration–time* curve — a measurement taken from a patient. ROC AUC is area
+under a *Receiver Operating Characteristic* curve — a property of a classifier.
+They share an acronym and nothing else.
+
+Because the regressors predict a continuous outcome, they have no binary label and
+therefore **no ROC AUC**; their payloads report `"roc_auc": null` with the reason.
+`c_index` is the regression analogue — same 0.5–1.0 scale, same "probability of
+correct ranking" reading — and is deliberately not called `auc`.
+
+A genuine ROC AUC comes from `fit-logistic`, which dichotomises the outcome at
+`--responder-threshold`, defaulting to **0.604 ng/mL** (the conventional preserved
+beta-cell function cutoff of 0.2 nmol/L, at 1 nmol/L = 3.02 ng/mL). It splits every
+study here non-degenerately (SDY524 29/79, SDY569 5/10, SDY1737 12/16, SDY797
+31/49). It is a setup-time parameter — nothing prompts — and it travels in the
+payload with its units, so an AUC is never compared across sites that used
+different cutoffs. **Confirm the cutoff before publishing from it.** Where a site
+falls entirely on one side of it, `roc_auc` is `null` with a stated reason rather
+than a fabricated number.
+
+## Outlier trimming
+
+Off by default. `--trim-outliers` keeps rows between `--trim-lower` (5) and
+`--trim-upper` (95) percentiles, `--trim-on target|features|both` (default
+`target` — trimming twelve features independently would drop far more rows than
+intended). Percentiles are computed within one site only, never pooled, and once
+before cross-validation so every fold sees the same population.
 
 ## Method — this implementation vs. the notebook spec
 
