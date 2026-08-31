@@ -14,8 +14,8 @@ from .logging_config import setup_logger
 logger = setup_logger("oadr_cpep")
 
 
-def select_features(site, panel="B", *, tidy=None, aa=None, demo=None, cpeptide=None,
-                    arms=None, arm_subjects=None, outdir=".", seed=42):
+def select_features(site, panel="B", *, cohort_id=None, tidy=None, aa=None, demo=None,
+                    cpeptide=None, arms=None, arm_subjects=None, outdir=".", seed=42):
     """LASSO selects features on this site's own data (alpha chosen by CV). Writes:
 
       <site>_panel<X>_lasso_selection.csv    full LASSO result — every candidate
@@ -23,8 +23,10 @@ def select_features(site, panel="B", *, tidy=None, aa=None, demo=None, cpeptide=
                                              (0/1), and the CV-chosen ``alpha``.
       <site>_panel<X>_selected_features.csv  only the selected features (feeds fit).
     """
-    frame, feats, target = cu.load_site(site, panel, tidy=tidy, aa=aa, demo=demo,
-                                        cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
+    frame, feats, target = cu.load_site(site, panel, cohort_id=cohort_id, tidy=tidy, aa=aa,
+                                        demo=demo, cpeptide=cpeptide, arms=arms,
+                                        arm_subjects=arm_subjects)
+    concepts = frame.attrs.get("concepts", {})
     X = frame[feats].astype(float).values
     y = frame[target].astype(float).values
 
@@ -40,9 +42,12 @@ def select_features(site, panel="B", *, tidy=None, aa=None, demo=None, cpeptide=
     full["panel"] = p
     full["n_subjects"] = len(y)
     full["alpha"] = float(m.alpha_)
+    if concepts:
+        full["concept_id"] = [concepts.get(f, {}).get("concept_id") for f in feats]
     full.to_csv(os.path.join(outdir, f"{site}_panel{p}_lasso_selection.csv"), index=False)
 
-    sel = full.loc[full["selected"] == 1, ["feature", "coefficient"]].copy()
+    keep_cols = ["feature", "coefficient"] + (["concept_id"] if concepts else [])
+    sel = full.loc[full["selected"] == 1, keep_cols].copy()
     sel["site"] = site
     sel["panel"] = p
     sel["n_subjects"] = len(y)

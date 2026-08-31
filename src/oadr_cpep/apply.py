@@ -20,6 +20,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 
 from . import common_utils as cu
+from . import forest as forest_mod
+from . import payload as pl
 from . import plot
 from .logging_config import setup_logger
 
@@ -44,7 +46,32 @@ def _fed_rf(frame, forests):
     return np.mean(preds, axis=0)
 
 
+def _json_job(path):
+    """A federated JSON payload -> a job, for either a linear model or a forest.
+
+    This is the aggregator's own output coming back to the site for the next
+    epoch. A forest arrives as trees rather than as a pickle, so it is applied by
+    traversing them — no scikit-learn object is reconstructed and no scaler is
+    needed, because the thresholds are already in the site's own units.
+    """
+    doc = pl.read(path)
+    common = {"source": os.path.basename(str(path)),
+              "aggregation": str(doc.get("aggregation", {}).get("rule", "")),
+              "mode": doc.get("stage", ""),
+              "iteration": int(doc.get("iteration", 1)),
+              "sites": ";".join(doc.get("cohorts", []))}
+    if doc.get("forest"):
+        return {"kind": "rf_json", "method": doc.get("algorithm", "rf"),
+                "forest": doc["forest"], "feats": list(doc["forest"].get("features", [])),
+                "n_trees": int(doc["forest"].get("n_trees", 0)), **common}
+    feats, coef, intercept = pl.as_vector(doc)
+    return {"kind": "linear", "method": doc.get("algorithm", "ridge"),
+            "feats": feats, "coef": coef, "intercept": intercept, **common}
+
+
 def _linear_job(method, path):
+    if str(path).endswith(".json"):
+        return _json_job(path)
     vec = pd.read_csv(path)
     m = (method or (vec["method"].iloc[0] if "method" in vec.columns else "ridge")).lower()
     cd = dict(zip(vec["feature"], vec["coefficient"]))
@@ -53,12 +80,15 @@ def _linear_job(method, path):
     coef = np.array([float(cd[f]) for f in feats])
     return {"kind": "linear", "method": m, "feats": feats, "coef": coef, "intercept": c_int,
             "source": os.path.basename(str(path)),
+            "iteration": int(vec["iteration"].iloc[0]) if "iteration" in vec.columns else 1,
             "aggregation": str(vec["aggregation"].iloc[0]) if "aggregation" in vec.columns else "",
             "mode": str(vec["mode"].iloc[0]) if "mode" in vec.columns else "",
             "sites": str(vec["sites"].iloc[0]) if "sites" in vec.columns else ""}
 
 
 def _rf_job(path):
+    if str(path).endswith(".json"):
+        return _json_job(path)
     with open(path, "rb") as fh:
         u = pickle.load(fh)
     forests = u.get("forests", [])
@@ -66,18 +96,21 @@ def _rf_job(path):
     n_trees = int(getattr(forests[0]["forest"], "n_estimators", 200)) if forests else 200
     return {"kind": "rf", "method": "rf", "forests": forests, "feats": feats, "n_trees": n_trees,
             "source": os.path.basename(str(path)),
+            "iteration": int(u.get("iteration", 1)),
             "aggregation": str(u.get("aggregation", "union")),
             "mode": str(u.get("mode", "")),
             "sites": ";".join(u.get("sites", []))}
 
 
 def apply_coefficients(site, panel="B", *, ridge_vector=None, lasso_vector=None, rf_union=None,
-                       tidy=None, aa=None, demo=None, cpeptide=None, arms=None, arm_subjects=None,
+                       cohort_id=None, tidy=None, aa=None, demo=None, cpeptide=None,
+                       arms=None, arm_subjects=None,
                        ridge_alpha=1.0, lasso_alpha=0.008, n_boot=2000, outdir=".", seed=42):
     """Produce this site's own outcome (solo vs federated) from explicit federated
     artifact files (--ridge-vector / --lasso-vector / --rf-union)."""
-    frame, _all, target = cu.load_site(site, panel, tidy=tidy, aa=aa, demo=demo,
-                                       cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
+    frame, _all, target = cu.load_site(site, panel, cohort_id=cohort_id, tidy=tidy, aa=aa,
+                                       demo=demo, cpeptide=cpeptide, arms=arms,
+                                       arm_subjects=arm_subjects)
     y = frame[target].astype(float).values
     n = len(y)
     p = panel.upper()
@@ -105,21 +138,29 @@ def apply_coefficients(site, panel="B", *, ridge_vector=None, lasso_vector=None,
             solo = cu.cv_predict(build, X, y, kf)
             fed = _fed_linear(X, y, kf, job["coef"], job["intercept"])
         else:
-            nt = job["n_trees"]
+            nt = max(1, job["n_trees"])
             solo = cu.cv_predict(lambda: RandomForestRegressor(n_estimators=nt, min_samples_leaf=2,
                                                                n_jobs=1, random_state=seed), X, y, kf)
-            fed = _fed_rf(frame, job["forests"])
+            # A JSON forest is traversed as data; a pickled union still needs sklearn.
+            fed = (forest_mod.predict(job["forest"], frame) if job["kind"] == "rf_json"
+                   else _fed_rf(frame, job["forests"]))
         r2s = cu.r2(y, solo); cis = cu.bootstrap_r2_ci(y, solo, n_boot, seed)
         r2f = cu.r2(y, fed);  cif = cu.bootstrap_r2_ci(y, fed, n_boot, seed)
         results.append({"method": mname, "solo": solo, "fed": fed, "r2_solo": r2s, "ci_solo": cis,
                         "r2_fed": r2f, "ci_fed": cif, "n_features": len(job["feats"]),
+                        "c_solo": cu.c_index(y, solo), "c_fed": cu.c_index(y, fed),
+                        "mse_solo": cu.mse(y, solo), "mse_fed": cu.mse(y, fed),
+                        "iteration": job.get("iteration", 1),
                         "source": job["source"], "aggregation": job["aggregation"],
                         "mode": job["mode"], "sites": job["sites"]})
-        logger.info(f"{site} {mname}: solo R2={r2s:+.3f}  federated R2={r2f:+.3f}  "
+        logger.info(f"{site} {mname} [iteration {job.get('iteration', 1)}]: "
+                    f"solo R2={r2s:+.3f}  federated R2={r2f:+.3f}  "
                     f"({'improves' if r2f > r2s else 'no gain'})  [{job['mode']}: {job['sites']}]")
 
     pd.DataFrame([{"site": site, "panel": p, "method": r["method"], "n_subjects": n,
-                   "n_features": r["n_features"],
+                   "n_features": r["n_features"], "iteration": r["iteration"],
+                   "mse_solo": r["mse_solo"], "mse_federated": r["mse_fed"],
+                   "c_index_solo": r["c_solo"], "c_index_federated": r["c_fed"],
                    "r2_solo": r["r2_solo"], "r2_solo_lo": r["ci_solo"][0], "r2_solo_hi": r["ci_solo"][1],
                    "r2_federated": r["r2_fed"], "r2_fed_lo": r["ci_fed"][0], "r2_fed_hi": r["ci_fed"][1],
                    "coefficients_source": r["source"], "aggregation": r["aggregation"],

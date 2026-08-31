@@ -20,76 +20,167 @@ import pickle
 import numpy as np
 import pandas as pd
 
+from . import forest as forest_mod
+from . import payload as pl
 from .logging_config import setup_logger
 
 logger = setup_logger("oadr_cpep")
 
 
-# --------------------------------------------------------------- consensus (Phase 1)
-def consensus_features(features, min_sites=None, from_site=None, outdir="."):
-    """Tally the given per-site selected-features CSVs into a consensus feature set.
-
-    Args:
-        features: list of explicit ``*_selected_features.csv`` file paths.
-        min_sites: keep a feature selected by >= this many sites (default: majority).
-        from_site: use this site's selection AS the consensus (single-site, bespoke).
-        outdir: output directory.
+# --------------------------------------------------------------- consensus
+def consensus_features(features, outdir=".", emit_json=False, iteration=1):
+    """The consensus feature set = the **intersection** of the per-site selections —
+    the features every site selected. ``features`` is a list of explicit
+    ``*_selected_features.csv`` file paths.
     """
     files = [str(f) for f in features]
     if not files:
         raise SystemExit("No --features files given.")
     os.makedirs(outdir, exist_ok=True)
 
-    # derive the panel tag from the files themselves (no flags, no assumptions)
-    panels = set()
+    def _chosen(d):
+        return d.loc[d["selected"] == 1, "feature"] if "selected" in d.columns else d["feature"]
+
+    panels, sites, sets, concepts = set(), [], [], {}
     for f in files:
         d = pd.read_csv(f)
         if "panel" in d.columns and len(d):
             panels.add(str(d["panel"].iloc[0]).upper())
+        sites.append(str(d["site"].iloc[0]) if "site" in d.columns else os.path.basename(f))
+        sets.append(set(_chosen(d)))
+        if "concept_id" in d.columns:
+            concepts.update({r.feature: int(r.concept_id) for r in d.itertuples()
+                             if pd.notna(r.concept_id)})
     if len(panels) > 1:
         raise SystemExit(f"input files mix panels {sorted(panels)} — pass one panel's selections")
     tag = f"panel{next(iter(panels))}" if panels else ""
     cons_name = f"consensus_{tag}_features.csv" if tag else "consensus_features.csv"
-    tally_name = f"feature_selection_tally_{tag}.csv" if tag else "feature_selection_tally.csv"
 
-    def _chosen(d):
-        return d.loc[d["selected"] == 1, "feature"] if "selected" in d.columns else d["feature"]
-
-    if from_site:
-        match = [f for f in files if os.path.basename(f).startswith(f"{from_site}_")]
-        if not match:
-            raise SystemExit(f"No selected-features file for site {from_site!r} in the given files")
-        consensus = sorted(_chosen(pd.read_csv(match[0])))
-        pd.DataFrame({"feature": consensus}).to_csv(os.path.join(outdir, cons_name), index=False)
-        logger.info(f"consensus from site {from_site} (single-site, bespoke) "
-                    f"({len(consensus)}) -> {cons_name}: {consensus}")
-        return
-
-    counts, sites = {}, []
-    for f in files:
-        d = pd.read_csv(f)
-        sites.append(d["site"].iloc[0] if "site" in d.columns else os.path.basename(f))
-        for feat in _chosen(d):
-            counts[feat] = counts.get(feat, 0) + 1
-    n = len(files)
-    thr = min_sites if min_sites is not None else (n // 2 + 1)
-    consensus = sorted(f for f, c in counts.items() if c >= thr)
+    consensus = sorted(set.intersection(*sets)) if sets else []
     pd.DataFrame({"feature": consensus}).to_csv(os.path.join(outdir, cons_name), index=False)
-    tally = pd.DataFrame(sorted(counts.items(), key=lambda kv: -kv[1]),
-                         columns=["feature", "n_sites_selected"])
-    tally["kept"] = (tally["n_sites_selected"] >= thr).astype(int)
-    tally.to_csv(os.path.join(outdir, tally_name), index=False)
-    logger.info(f"{n} sites {sites}, panel {next(iter(panels)) if panels else 'all'}, threshold {thr}")
-    logger.info(f"consensus features ({len(consensus)}) -> {cons_name}: {consensus}")
+    logger.info(f"consensus = intersection of {len(files)} sites {sites}: "
+                f"{len(consensus)} features -> {cons_name}: {consensus}")
+
+    if emit_json:
+        # The feature space the coordinator sends out, carrying each feature's
+        # concept id where the sites reported one.
+        entries = [{"feature": f, **({"concept_id": concepts[f]} if f in concepts else {})}
+                   for f in consensus]
+        panel = next(iter(panels)) if panels else ""
+        name = f"consensus_panel{panel}_features_iter{iteration}.json"
+        pl.write(pl.feature_space_payload(iteration=iteration, panel=panel,
+                                          features=entries, sites=sites),
+                 os.path.join(outdir, name))
+        logger.info(f"  feature space -> {name} (iteration {iteration})")
 
 
-# --------------------------------------------------------------- aggregate (Phase 2)
+# --------------------------------------------------------------- aggregate (JSON)
+def _combine(values, weights, method):
+    """Combine one coefficient across the sites that carried it."""
+    v = np.asarray(values, dtype=float)
+    if method == "median":
+        return float(np.median(v))
+    if method == "fedavg" and weights is not None:
+        return float(np.average(v, weights=np.asarray(weights, dtype=float)))
+    return float(v.mean())
+
+
+def aggregate_payloads(files, method="fedavg", outdir=".", iteration=None):
+    """Combine site payloads into one federated payload per algorithm.
+
+    Coefficients are matched on ``payload.entry_key`` — the concept id where the
+    data came in mapped, the feature name where it did not — so two sites whose
+    columns are named differently still combine the same variable. A coefficient
+    only some sites carried is averaged over those sites, with
+    ``n_sites_contributing`` recording how many.
+
+    Algorithms are never mixed: ridge, lasso, rf and the logistic models each
+    aggregate against their own kind, because their coefficients are different
+    quantities (betas on log C-peptide versus log-odds of responder status).
+
+    The output ``iteration`` is one past the inputs' — this is the next round.
+
+    On weighting: FedAvg weights are subject counts, and subject counts stay at
+    the site. Unless a payload volunteers ``n_subjects``, the combination is an
+    unweighted mean and says so in the output, rather than silently claiming to
+    be weighted.
+    """
+    docs = [(f, pl.read(f)) for f in files]
+    panels = {d.get("panel", "") for _f, d in docs}
+    if len(panels) > 1:
+        raise SystemExit(f"input payloads mix panels {sorted(panels)} — pass one panel's payloads")
+    panel = next(iter(panels), "")
+
+    in_iters = {int(d.get("iteration", 1)) for _f, d in docs}
+    out_iter = iteration if iteration is not None else max(in_iters) + 1
+
+    by_algorithm = {}
+    for f, d in docs:
+        by_algorithm.setdefault(d.get("algorithm", "ridge"), []).append((f, d))
+
+    for algorithm, group in by_algorithm.items():
+        weights = [d.get("n_subjects") for _f, d in group]
+        weighted = method == "fedavg" and all(w for w in weights)
+        if method == "fedavg" and not weighted:
+            logger.warning(f"  {algorithm}: no n_subjects in the payloads (counts stay at "
+                           f"the site), so fedavg is an unweighted mean")
+
+        # gather every coefficient by its identity across the group
+        seen, order = {}, []
+        for _f, d in group:
+            for e in d.get("coefficients", []):
+                k = pl.entry_key(e)
+                if k not in seen:
+                    seen[k] = {"entry": e, "values": [], "weights": [], "sites": []}
+                    order.append(k)
+                seen[k]["values"].append(float(e.get("coefficient", 0.0)))
+                seen[k]["weights"].append(d.get("n_subjects") or 1)
+                seen[k]["sites"].append(d.get("site"))
+
+        coefficients = []
+        for k in order:
+            rec = seen[k]
+            e = rec["entry"]
+            coefficients.append(pl.coefficient(
+                e.get("feature"), _combine(rec["values"],
+                                           rec["weights"] if weighted else None, method),
+                concept_id=e.get("concept_id"), domain_id=e.get("domain_id"),
+                concept_name=e.get("concept_name"),
+                n_sites_contributing=len({s for s in rec["sites"] if s})))
+
+        intercepts = [float(d.get("intercept", 0.0)) for _f, d in group]
+        w = [d.get("n_subjects") or 1 for _f, d in group] if weighted else None
+
+        forests = [d["forest"] for _f, d in group if d.get("forest")]
+        input_models = [{"site": d.get("site"), "cohort_id": d.get("cohort_id"),
+                         "iteration": int(d.get("iteration", 1)),
+                         "source": os.path.basename(str(f)),
+                         "n_coefficients": len(d.get("coefficients", []))}
+                        for f, d in group]
+
+        doc = pl.aggregate_payload(
+            iteration=out_iter, panel=panel, algorithm=algorithm,
+            coefficients=coefficients, intercept=_combine(intercepts, w, method),
+            rule=method if weighted else ("median" if method == "median" else "mean"),
+            input_models=input_models,
+            hyperparameters={"weighted_by_n_subjects": weighted},
+            forest=forest_mod.union(forests) if forests else None)
+
+        name = f"federated_panel{panel}_{algorithm}_iter{out_iter}.json"
+        pl.write(doc, os.path.join(outdir, name))
+        logger.info(f"Aggregated {len(group)} {algorithm} payload(s) by "
+                    f"{doc['aggregation']['rule']} from {doc['cohorts']} "
+                    f"-> {name} (iteration {max(in_iters)} -> {out_iter})"
+                    + (f", {doc['forest']['n_trees']} trees" if doc.get("forest") else ""))
+
+
+# --------------------------------------------------------------- aggregate (CSV/pkl)
 def _src_tag(features_source):
     """The leading token of a features-source filename (e.g. SDY524, consensus)."""
     return str(features_source).split("_")[0] if features_source else ""
 
 
-def aggregate_vectors(vectors, method="fedavg", outdir="."):
+def aggregate_vectors(vectors, method="fedavg", outdir=".", iteration=None):
     """Combine the given per-site coefficient vectors / forests.
 
     Args:
@@ -103,6 +194,14 @@ def aggregate_vectors(vectors, method="fedavg", outdir="."):
     if not files:
         raise SystemExit("No --vector files given (pass the per-site vectors / forests).")
     os.makedirs(outdir, exist_ok=True)
+
+    # JSON payloads are the federated exchange format; CSV/pkl remain for local runs.
+    json_files = [f for f in files if f.endswith(".json")]
+    if json_files:
+        if len(json_files) != len(files):
+            raise SystemExit("mixed inputs: pass either JSON payloads or CSV/pkl vectors, "
+                             "not both — they carry different provenance")
+        return aggregate_payloads(files, method=method, outdir=outdir, iteration=iteration)
 
     panels, srcs = set(), set()
 

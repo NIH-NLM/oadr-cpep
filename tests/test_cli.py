@@ -11,6 +11,7 @@ EXPECTED_COMMANDS = [
     "fit-ridge",
     "fit-lasso",
     "fit-rf",
+    "fit-logistic",
     "fit-models",
     "apply-coefficients",
     "consensus-features",
