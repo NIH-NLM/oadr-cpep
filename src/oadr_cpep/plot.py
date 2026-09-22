@@ -41,10 +41,25 @@ def scatter(y, pred, title, base):
         pass
 
 
+def _best_fit(y, pred):
+    """Least-squares line of predicted on observed -> (slope, intercept).
+
+    This is the trend the points themselves make, which is NOT the y=x identity:
+    a slope below 1 is the usual regression-to-the-mean of a shrunken model.
+    """
+    m = ~np.isnan(pred)
+    if m.sum() < 2 or np.ptp(y[m]) == 0:
+        return float("nan"), float("nan")
+    b, a = np.polyfit(y[m], pred[m], 1)
+    return float(b), float(a)
+
+
 def solo_vs_federated(site, panel, y, results, base, sites_label=""):
     """Per-method solo-vs-federated grid (rows = methods, cols = solo|federated)
     -> <base>.png, .svg, and interactive .html. ``results`` is the list built by
-    apply_coefficients (each has method, solo, fed, r2_solo, ci_solo, r2_fed, ci_fed)."""
+    apply_coefficients (each has method, solo, fed, r2_solo, ci_solo, r2_fed,
+    ci_fed, mse_solo, mse_fed). Each panel carries R², MSE, the dashed y=x
+    identity, and the solid least-squares best-fit line through the points."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -58,15 +73,26 @@ def solo_vs_federated(site, panel, y, results, base, sites_label=""):
 
     fig, axes = plt.subplots(nm, 2, figsize=(10, 4.4 * nm), constrained_layout=True, squeeze=False)
     for row, r in enumerate(results):
-        for col, (pred, lab, r2v, ci) in enumerate([
-                (r["solo"], f"{site} alone", r["r2_solo"], r["ci_solo"]),
-                (r["fed"], f"{site} + federated", r["r2_fed"], r["ci_fed"])]):
+        for col, (pred, lab, r2v, ci, msev) in enumerate([
+                (r["solo"], f"{site} alone", r["r2_solo"], r["ci_solo"], r["mse_solo"]),
+                (r["fed"], f"{site} + federated", r["r2_fed"], r["ci_fed"], r["mse_fed"])]):
             ax = axes[row][col]
-            ax.scatter(y, pred, c="#1f77b4", s=55, edgecolor="white")
-            ax.plot([lo, hi], [lo, hi], "k--", alpha=0.4)
-            ax.set_title(f"{r['method'].upper()} — {lab}\nR²={r2v:+.2f} [{ci[0]:+.2f}, {ci[1]:+.2f}]",
+            ax.scatter(y, pred, c="#1f77b4", s=55, edgecolor="white", zorder=3)
+            ax.plot([lo, hi], [lo, hi], "k--", alpha=0.4, label="y = x (perfect)")
+            b, a = _best_fit(y, pred)
+            if b == b:                        # skip a degenerate fit (NaN)
+                ax.plot([lo, hi], [a + b * lo, a + b * hi], "-", color="#d62728", lw=2,
+                        alpha=0.9, zorder=2, label=f"best fit (slope={b:+.2f})")
+            # Both MSEs on every panel, so the solo/federated comparison needs no
+            # glancing across the row; the panel's own value is the bracketed one.
+            ms, mf = f"{r['mse_solo']:.3f}", f"{r['mse_fed']:.3f}"
+            ms, mf = (f"[{ms}]", mf) if col == 0 else (ms, f"[{mf}]")
+            ax.set_title(f"{r['method'].upper()} — {lab}\n"
+                         f"R²={r2v:+.2f} [{ci[0]:+.2f}, {ci[1]:+.2f}]\n"
+                         f"MSE  solo {ms}   federated {mf}",
                          fontweight="bold", fontsize=10)
             ax.set_xlabel("Observed"); ax.set_ylabel("Predicted"); ax.grid(alpha=0.25)
+            ax.legend(loc="upper left", fontsize=8, framealpha=0.85)
     fig.suptitle(suptitle, fontsize=13, fontweight="bold")
     fig.savefig(base + ".png", dpi=220)
     fig.savefig(base + ".svg")
@@ -77,8 +103,9 @@ def solo_vs_federated(site, panel, y, results, base, sites_label=""):
         from plotly.subplots import make_subplots
         titles = []
         for r in results:
-            titles += [f"{r['method'].upper()} — alone  R²={r['r2_solo']:+.2f}",
-                       f"{r['method'].upper()} — +federated  R²={r['r2_fed']:+.2f}"]
+            mse_pair = f"MSE solo {r['mse_solo']:.3f} / federated {r['mse_fed']:.3f}"
+            titles += [f"{r['method'].upper()} — alone  R²={r['r2_solo']:+.2f}<br>{mse_pair}",
+                       f"{r['method'].upper()} — +federated  R²={r['r2_fed']:+.2f}<br>{mse_pair}"]
         pfig = make_subplots(rows=nm, cols=2, subplot_titles=titles)
         for row, r in enumerate(results, start=1):
             for col, pred in enumerate([r["solo"], r["fed"]], start=1):
@@ -86,7 +113,13 @@ def solo_vs_federated(site, panel, y, results, base, sites_label=""):
                                           marker=dict(size=7, line=dict(width=1, color="white"))),
                                row=row, col=col)
                 pfig.add_trace(go.Scatter(x=[lo, hi], y=[lo, hi], mode="lines", showlegend=False,
-                                          line=dict(dash="dash", color="black")), row=row, col=col)
+                                          name="y = x", line=dict(dash="dash", color="black")),
+                               row=row, col=col)
+                b, a = _best_fit(y, pred)
+                if b == b:
+                    pfig.add_trace(go.Scatter(x=[lo, hi], y=[a + b * lo, a + b * hi], mode="lines",
+                                              showlegend=False, name=f"best fit (slope={b:+.2f})",
+                                              line=dict(color="#d62728", width=2)), row=row, col=col)
         pfig.update_layout(title_text=suptitle, width=900, height=380 * nm)
         pfig.write_html(base + ".html")
     except Exception:

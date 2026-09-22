@@ -37,13 +37,44 @@ def _fed_linear(X, y, kf, c_coef, c_int):
     return pred
 
 
-def _fed_rf(frame, forests):
+def _without_own(items, site, key, what):
+    """Drop this site's own contribution from a federated forest before scoring.
+
+    A forest trained on this site's rows would be predicting subjects it has
+    already seen, which is not an out-of-sample comparison against the solo
+    model. Provenance rides along on every tree/forest, so the site's own share
+    is dropped here. If nothing else remains (a union of one), there is no
+    honest federated prediction to make and the leak is reported rather than
+    hidden.
+    """
+    kept = [it for it in items if str(it.get(key, "")) != str(site)]
+    if not kept:
+        logger.warning(f"{site}: the federated forest holds only {site}'s own {what} — "
+                       f"its federated score is NOT out-of-sample")
+        return items
+    if len(kept) < len(items):
+        logger.info(f"{site}: held out this site's own {what} from the federated forest "
+                    f"({len(items)} -> {len(kept)}) so the comparison is out-of-sample")
+    return kept
+
+
+def _fed_rf(frame, forests, site=None):
     """Average the union forests, each applied with its own scaler and features."""
+    if site is not None:
+        forests = _without_own(forests, site, "site", "forest")
     preds = []
     for fd in forests:
         Xi = frame.reindex(columns=fd["features"]).fillna(0.0).astype(float).values
         preds.append(fd["forest"].predict(fd["scaler"].transform(Xi)))
     return np.mean(preds, axis=0)
+
+
+def _fed_rf_json(doc, frame, site=None):
+    """Traverse a JSON forest, minus any trees this site itself contributed."""
+    if site is None:
+        return forest_mod.predict(doc, frame)
+    trees = _without_own(doc.get("trees", []), site, "site", "trees")
+    return forest_mod.predict({**doc, "trees": trees}, frame)
 
 
 def _json_job(path):
@@ -142,8 +173,9 @@ def apply_coefficients(site, panel="B", *, ridge_vector=None, lasso_vector=None,
             solo = cu.cv_predict(lambda: RandomForestRegressor(n_estimators=nt, min_samples_leaf=2,
                                                                n_jobs=1, random_state=seed), X, y, kf)
             # A JSON forest is traversed as data; a pickled union still needs sklearn.
-            fed = (forest_mod.predict(job["forest"], frame) if job["kind"] == "rf_json"
-                   else _fed_rf(frame, job["forests"]))
+            # Either way the site's own trees are held out (see _without_own).
+            fed = (_fed_rf_json(job["forest"], frame, site) if job["kind"] == "rf_json"
+                   else _fed_rf(frame, job["forests"], site))
         r2s = cu.r2(y, solo); cis = cu.bootstrap_r2_ci(y, solo, n_boot, seed)
         r2f = cu.r2(y, fed);  cif = cu.bootstrap_r2_ci(y, fed, n_boot, seed)
         results.append({"method": mname, "solo": solo, "fed": fed, "r2_solo": r2s, "ci_solo": cis,
@@ -154,7 +186,8 @@ def apply_coefficients(site, panel="B", *, ridge_vector=None, lasso_vector=None,
                         "source": job["source"], "aggregation": job["aggregation"],
                         "mode": job["mode"], "sites": job["sites"]})
         logger.info(f"{site} {mname} [iteration {job.get('iteration', 1)}]: "
-                    f"solo R2={r2s:+.3f}  federated R2={r2f:+.3f}  "
+                    f"solo R2={r2s:+.3f} MSE={results[-1]['mse_solo']:.3f}  "
+                    f"federated R2={r2f:+.3f} MSE={results[-1]['mse_fed']:.3f}  "
                     f"({'improves' if r2f > r2s else 'no gain'})  [{job['mode']}: {job['sites']}]")
 
     pd.DataFrame([{"site": site, "panel": p, "method": r["method"], "n_subjects": n,
