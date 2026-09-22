@@ -1,3 +1,5 @@
+[![Build and Deploy Sphinx Documentation](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docs.yml/badge.svg)](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docs.yml)
+[![Build and Push Docker Image](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docker-build.yml/badge.svg)](https://github.com/NIH-NLM/oadr-cpep/actions/workflows/docker-build.yml)
 # oadr-cpep
 
 `oadr-cpep` is a Python package for **federated prediction of residual beta-cell
@@ -402,3 +404,19 @@ Dockerfile          ghcr image (clones this repo, pip installs it)
 docs/               sphinx (RTD theme) → GitHub Pages
 tests/              CLI tests
 ```
+
+## Companion repositories
+
+* Main Python Package: [oadr-cpep](https://github.com/NIH-NLM/oadr-cpep) (here)
+* Site specific workflow: [oadr-cpep-fed-predict-site-nf](https://github.com/NIH-NLM/oadr-cpep-fed-predict-site-nf)
+* Consensus and Aggregation specific workflow: [oadr-cpep-fed-predict-site-nf](https://github.com/NIH-NLM/oadr-cpep-fed-predict-aggregation-nf)
+
+## Citation
+
+Bhattacharya S, Dunn P, Thomas CG, Smith B, Schaefer H, Chen J, Hu Z, Zalocusky KA, Shankar RD, Shen-Orr SS, Thomson E, Wiser J, Butte AJ. ImmPort, toward repurposing of open access immunological assay data for translational and clinical research. Sci Data. 2018 Feb 27;5:180015. doi: 10.1038/sdata.2018.15. PMID: 29485622; PMCID: PMC5827693.
+
+Kong YM, Dahlke C, Xiang Q, Qian Y, Karp D, Scheuermann RH. Toward an ontology-based framework for clinical research databases. J Biomed Inform. 2011 Feb;44(1):48-58. doi: 10.1016/j.jbi.2010.05.001. Epub 2010 May 10. PMID: 20460173; PMCID: PMC2953614.
+
+The data supporting this publication is available at ImmPort (immport.org) under study accession SDY524, SDY569, SDY797, SDY1737.
+
+
