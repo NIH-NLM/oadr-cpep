@@ -83,13 +83,8 @@ def solo_vs_federated(site, panel, y, results, base, sites_label=""):
             if b == b:                        # skip a degenerate fit (NaN)
                 ax.plot([lo, hi], [a + b * lo, a + b * hi], "-", color="#d62728", lw=2,
                         alpha=0.9, zorder=2, label=f"best fit (slope={b:+.2f})")
-            # Both MSEs on every panel, so the solo/federated comparison needs no
-            # glancing across the row; the panel's own value is the bracketed one.
-            ms, mf = f"{r['mse_solo']:.3f}", f"{r['mse_fed']:.3f}"
-            ms, mf = (f"[{ms}]", mf) if col == 0 else (ms, f"[{mf}]")
             ax.set_title(f"{r['method'].upper()} — {lab}\n"
-                         f"R²={r2v:+.2f} [{ci[0]:+.2f}, {ci[1]:+.2f}]\n"
-                         f"MSE  solo {ms}   federated {mf}",
+                         f"R²={r2v:+.2f} [{ci[0]:+.2f}, {ci[1]:+.2f}]   MSE={msev:.3f}",
                          fontweight="bold", fontsize=10)
             ax.set_xlabel("Observed"); ax.set_ylabel("Predicted"); ax.grid(alpha=0.25)
             ax.legend(loc="upper left", fontsize=8, framealpha=0.85)
@@ -103,9 +98,8 @@ def solo_vs_federated(site, panel, y, results, base, sites_label=""):
         from plotly.subplots import make_subplots
         titles = []
         for r in results:
-            mse_pair = f"MSE solo {r['mse_solo']:.3f} / federated {r['mse_fed']:.3f}"
-            titles += [f"{r['method'].upper()} — alone  R²={r['r2_solo']:+.2f}<br>{mse_pair}",
-                       f"{r['method'].upper()} — +federated  R²={r['r2_fed']:+.2f}<br>{mse_pair}"]
+            titles += [f"{r['method'].upper()} — alone  R²={r['r2_solo']:+.2f}  MSE={r['mse_solo']:.3f}",
+                       f"{r['method'].upper()} — +federated  R²={r['r2_fed']:+.2f}  MSE={r['mse_fed']:.3f}"]
         pfig = make_subplots(rows=nm, cols=2, subplot_titles=titles)
         for row, r in enumerate(results, start=1):
             for col, pred in enumerate([r["solo"], r["fed"]], start=1):
