@@ -127,9 +127,17 @@ def _emit_json(path, *, iteration, site, panel, algorithm, feats, coefs, interce
     logger.info(f"Wrote {os.path.basename(path)} (iteration {iteration})")
 
 
-def _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id):
+def _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id,
+                  cohort_sql=None, cohort_target_sql=None, max_rows=None, cb_profile=""):
+    """The input kwargs for :func:`cu.load_site`.
+
+    In cohort mode the query and client options ride along under the names
+    ``cohort_data.load_cohort`` expects; in file mode they are absent entirely.
+    """
     return {"tidy": tidy, "aa": aa, "demo": demo, "cpeptide": cpeptide,
-            "arms": arms, "arm_subjects": arm_subjects, "cohort_id": cohort_id}
+            "arms": arms, "arm_subjects": arm_subjects, "cohort_id": cohort_id,
+            **cu.cohort_kwargs(cohort_id, sql=cohort_sql, target_sql=cohort_target_sql,
+                               profilename=cb_profile, max_rows=max_rows)}
 
 
 # ------------------------------------------------------------------ linear regressors
@@ -174,28 +182,36 @@ def _fit_linear(kind, site, panel, features, files, outdir, alpha, n_boot, seed,
 
 
 def fit_ridge(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
-              cpeptide=None, arms=None, arm_subjects=None, cohort_id=None, outdir=".",
+              cpeptide=None, arms=None, arm_subjects=None, cohort_id=None,
+           cohort_sql=None, cohort_target_sql=None, max_rows=None,
+           cb_profile="", outdir=".",
               alpha=1.0, n_boot=2000, seed=42, iteration=1, emit_json=False,
               trim=None, concepts=None):
     """Fit Ridge(alpha) on the feature set -> coefficient vector, CV metrics, graphic."""
     _fit_linear("ridge", site, panel, features,
-                _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id),
+                _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id,
+                              cohort_sql, cohort_target_sql, max_rows, cb_profile),
                 outdir, alpha, n_boot, seed, iteration, emit_json, trim, concepts)
 
 
 def fit_lasso(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
-              cpeptide=None, arms=None, arm_subjects=None, cohort_id=None, outdir=".",
+              cpeptide=None, arms=None, arm_subjects=None, cohort_id=None,
+           cohort_sql=None, cohort_target_sql=None, max_rows=None,
+           cb_profile="", outdir=".",
               alpha=0.008, n_boot=2000, seed=42, iteration=1, emit_json=False,
               trim=None, concepts=None):
     """Fit Lasso(alpha) on the feature set -> coefficient vector, CV metrics, graphic."""
     _fit_linear("lasso", site, panel, features,
-                _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id),
+                _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id,
+                              cohort_sql, cohort_target_sql, max_rows, cb_profile),
                 outdir, alpha, n_boot, seed, iteration, emit_json, trim, concepts)
 
 
 # ------------------------------------------------------------------ random forest
 def fit_rf(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
-           cpeptide=None, arms=None, arm_subjects=None, cohort_id=None, outdir=".",
+           cpeptide=None, arms=None, arm_subjects=None, cohort_id=None,
+           cohort_sql=None, cohort_target_sql=None, max_rows=None,
+           cb_profile="", outdir=".",
            n_trees=200, n_boot=2000, seed=42, iteration=1, emit_json=False,
            trim=None, concepts=None):
     """Fit a Random Forest on the feature set -> forest, CV metrics, graphic.
@@ -205,7 +221,8 @@ def fit_rf(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
     aggregator should consume. A pickle is tied to the exact scikit-learn that
     wrote it; the JSON form is not.
     """
-    files = _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id)
+    files = _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id,
+                              cohort_sql, cohort_target_sql, max_rows, cb_profile)
     frame, feats, X, y, src, tag, trim_info, _t = _prepare(site, panel, features, files, trim)
     concepts = concepts or frame.attrs.get("concepts", {})
     p = panel.upper(); stem = cu.stem(site, panel, tag)
@@ -267,7 +284,9 @@ def _logistic_builder(penalty, C, seed):
 
 
 def fit_logistic(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
-                 cpeptide=None, arms=None, arm_subjects=None, cohort_id=None, outdir=".",
+                 cpeptide=None, arms=None, arm_subjects=None, cohort_id=None,
+           cohort_sql=None, cohort_target_sql=None, max_rows=None,
+           cb_profile="", outdir=".",
                  penalty="l2", alpha=1.0, n_boot=2000, seed=42, iteration=1,
                  emit_json=False, trim=None, concepts=None,
                  responder_threshold=cu.DEFAULT_RESPONDER_THRESHOLD):
@@ -287,7 +306,8 @@ def fit_logistic(site, panel="B", features=None, *, tidy=None, aa=None, demo=Non
     betas; the payload's ``algorithm`` is ``logistic_l1``/``logistic_l2`` so the
     aggregator keeps them apart.
     """
-    files = _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id)
+    files = _files_kwargs(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id,
+                              cohort_sql, cohort_target_sql, max_rows, cb_profile)
     frame, feats, X, y_log, src, tag, trim_info, _t = _prepare(site, panel, features, files, trim)
     concepts = concepts or frame.attrs.get("concepts", {})
     p = panel.upper(); stem = cu.stem(site, panel, tag)
@@ -357,7 +377,9 @@ def fit_logistic(site, panel="B", features=None, *, tidy=None, aa=None, demo=Non
 
 # ------------------------------------------------------------------ convenience
 def fit_models(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
-               cpeptide=None, arms=None, arm_subjects=None, cohort_id=None, outdir=".",
+               cpeptide=None, arms=None, arm_subjects=None, cohort_id=None,
+           cohort_sql=None, cohort_target_sql=None, max_rows=None,
+           cb_profile="", outdir=".",
                ridge_alpha=1.0, lasso_alpha=0.008, n_trees=200, n_boot=2000, seed=42,
                iteration=1, emit_json=False, trim=None, concepts=None,
                with_logistic=False, responder_threshold=cu.DEFAULT_RESPONDER_THRESHOLD):
@@ -366,7 +388,9 @@ def fit_models(site, panel="B", features=None, *, tidy=None, aa=None, demo=None,
     ``with_logistic`` adds the classifier track, which is what produces ROC AUC.
     """
     common = dict(tidy=tidy, aa=aa, demo=demo, cpeptide=cpeptide, arms=arms,
-                  arm_subjects=arm_subjects, cohort_id=cohort_id, outdir=outdir,
+                  arm_subjects=arm_subjects, cohort_id=cohort_id,
+                  cohort_sql=cohort_sql, cohort_target_sql=cohort_target_sql,
+                  max_rows=max_rows, cb_profile=cb_profile, outdir=outdir,
                   n_boot=n_boot, seed=seed, iteration=iteration, emit_json=emit_json,
                   trim=trim, concepts=concepts)
     fit_ridge(site, panel, features, alpha=ridge_alpha, **common)

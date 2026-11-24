@@ -19,6 +19,9 @@ list-cohorts call. Use ``describe_cohort`` first to see what a cohort holds.
 """
 from __future__ import annotations
 
+import os
+import tempfile
+
 import numpy as np
 import pandas as pd
 
@@ -39,12 +42,57 @@ _IMPORT_HINT = (
 )
 
 
+API_KEY_ENV = "CLOUDOS_API_KEY"
+WORKSPACE_ENV = "CLOUDOS_WORKSPACE_ID"
+BASE_URL_ENV = "CLOUDOS_BASE_URL"
+CONFIG_DIR_ENV = "CLOUDOS_CONFIG_DIR"
+DEFAULT_BASE_URL = "https://cloudos.lifebit.ai"
+ENV_PROFILE = "oadr_cpep_env"
+
+
+def _configure_from_env(cb):
+    """Write a credential profile from the environment when none is on disk.
+
+    ``cloudos-cb-py`` stores profiles in a file and reads only
+    ``CLOUDOS_CONFIG_DIR`` from the environment, so a workflow process — which
+    has no home-directory config — must write one before its first call.
+    Credentials come from ``CLOUDOS_API_KEY`` / ``CLOUDOS_WORKSPACE_ID``
+    (Nextflow secrets), so the key never appears on a command line, in
+    ``nextflow.config``, or in a log.
+
+    An existing config always wins, so a configured workstation is never
+    silently overridden by a stray environment variable.
+    """
+    cfg_dir = os.environ.get(CONFIG_DIR_ENV)
+    if cfg_dir is None:
+        default_dir = os.path.join(os.path.expanduser("~"), ".cloudos-cb")
+        if os.path.exists(os.path.join(default_dir, "config.json")):
+            return                                # configured already; leave it alone
+    elif os.path.exists(os.path.join(cfg_dir, "config.json")):
+        return                                    # written by an earlier call
+
+    apikey = os.environ.get(API_KEY_ENV)
+    workspace = os.environ.get(WORKSPACE_ENV)
+    if not apikey or not workspace:
+        return                                    # let cloudos_cb raise its own clear error
+
+    if cfg_dir is None:
+        cfg_dir = tempfile.mkdtemp(prefix="oadr-cpep-cb-")
+        os.environ[CONFIG_DIR_ENV] = cfg_dir
+    cb.configure(profilename=ENV_PROFILE, apikey=apikey, workspace_id=workspace,
+                 base_url=os.environ.get(BASE_URL_ENV, DEFAULT_BASE_URL),
+                 set_default=True)
+    logger.info(f"cohort profile '{ENV_PROFILE}' configured from the environment "
+                f"(workspace {workspace})")
+
+
 def _client():
     """Import cloudos_cb on demand, with an actionable message when it is absent."""
     try:
         import cloudos_cb
     except ImportError as e:                      # pragma: no cover - env dependent
         raise SystemExit(f"{_IMPORT_HINT}\n({e})") from e
+    _configure_from_env(cloudos_cb)
     return cloudos_cb
 
 

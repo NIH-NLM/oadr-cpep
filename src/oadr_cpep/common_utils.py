@@ -33,9 +33,26 @@ def load_site(site, panel, *, cohort_id=None, tidy=None, aa=None, demo=None,
     """
     if cohort_id:
         from . import cohort_data as cd      # optional dependency — import only if used
-        return cd.load_cohort(cohort_id, panel, **cohort_kwargs)
+        # cpeptide is a named parameter above, so it must be forwarded explicitly:
+        # it is load_cohort's local-target fallback for a cohort whose export
+        # lacks the outcome, and _files() in the CLI permits it alongside --cohort-id.
+        return cd.load_cohort(cohort_id, panel, cpeptide=cpeptide, **cohort_kwargs)
     return od.load_features(site, panel, tidy=tidy, aa=aa, demo=demo,
                             cpeptide=cpeptide, arms=arms, arm_subjects=arm_subjects)
+
+
+def cohort_kwargs(cohort_id, *, sql=None, target_sql=None, profilename="", max_rows=None):
+    """The extra :func:`load_site` kwargs for cohort mode, named as
+    ``cohort_data.load_cohort`` expects them.
+
+    Empty in file mode, so one call site serves both sources: ``load_site``
+    forwards its surplus kwargs straight through to the cohort loader, and a file
+    run simply has none to forward.
+    """
+    if not cohort_id:
+        return {}
+    return {"sql": sql, "target_sql": target_sql,
+            "profilename": profilename, "max_rows": max_rows}
 
 
 def read_feature_list(features):

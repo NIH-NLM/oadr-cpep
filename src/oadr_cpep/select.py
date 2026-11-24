@@ -15,7 +15,9 @@ logger = setup_logger("oadr_cpep")
 
 
 def select_features(site, panel="B", *, cohort_id=None, tidy=None, aa=None, demo=None,
-                    cpeptide=None, arms=None, arm_subjects=None, outdir=".", seed=42):
+                    cpeptide=None, arms=None, arm_subjects=None,
+                    cohort_sql=None, cohort_target_sql=None, max_rows=None,
+                    cb_profile="", outdir=".", seed=42):
     """LASSO selects features on this site's own data (alpha chosen by CV). Writes:
 
       <site>_panel<X>_lasso_selection.csv    full LASSO result — every candidate
@@ -25,7 +27,11 @@ def select_features(site, panel="B", *, cohort_id=None, tidy=None, aa=None, demo
     """
     frame, feats, target = cu.load_site(site, panel, cohort_id=cohort_id, tidy=tidy, aa=aa,
                                         demo=demo, cpeptide=cpeptide, arms=arms,
-                                        arm_subjects=arm_subjects)
+                                        arm_subjects=arm_subjects,
+                                        **cu.cohort_kwargs(
+                                            cohort_id, sql=cohort_sql,
+                                            target_sql=cohort_target_sql,
+                                            profilename=cb_profile, max_rows=max_rows))
     concepts = frame.attrs.get("concepts", {})
     X = frame[feats].astype(float).values
     y = frame[target].astype(float).values
