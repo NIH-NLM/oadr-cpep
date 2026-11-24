@@ -136,12 +136,18 @@ def _rf_job(path):
 def apply_coefficients(site, panel="B", *, ridge_vector=None, lasso_vector=None, rf_union=None,
                        cohort_id=None, tidy=None, aa=None, demo=None, cpeptide=None,
                        arms=None, arm_subjects=None,
+                       cohort_sql=None, cohort_target_sql=None, max_rows=None,
+                       cb_profile="",
                        ridge_alpha=1.0, lasso_alpha=0.008, n_boot=2000, outdir=".", seed=42):
     """Produce this site's own outcome (solo vs federated) from explicit federated
     artifact files (--ridge-vector / --lasso-vector / --rf-union)."""
     frame, _all, target = cu.load_site(site, panel, cohort_id=cohort_id, tidy=tidy, aa=aa,
                                        demo=demo, cpeptide=cpeptide, arms=arms,
-                                       arm_subjects=arm_subjects)
+                                       arm_subjects=arm_subjects,
+                                       **cu.cohort_kwargs(
+                                           cohort_id, sql=cohort_sql,
+                                           target_sql=cohort_target_sql,
+                                           profilename=cb_profile, max_rows=max_rows))
     y = frame[target].astype(float).values
     n = len(y)
     p = panel.upper()

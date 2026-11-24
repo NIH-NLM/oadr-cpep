@@ -43,7 +43,25 @@ app = typer.Typer(
 )
 
 
-def _files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id=None):
+def _sql_text(text, path, flag):
+    """Resolve a query given inline or as a file -> SQL string (never both).
+
+    Resolving here means everything below the CLI only ever sees SQL text, so the
+    inline/file choice stays a command-line concern.
+    """
+    if text and path:
+        raise typer.BadParameter(f"pass {flag} or {flag}-file, not both")
+    if path:
+        try:
+            return Path(path).read_text()
+        except OSError as e:
+            raise typer.BadParameter(f"cannot read {flag}-file {path}: {e}") from e
+    return text
+
+
+def _files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id=None,
+           cohort_sql=None, cohort_sql_file=None, cohort_target_sql=None,
+           cohort_target_sql_file=None, max_rows=None, cb_profile=""):
     """Collect the input options (Path -> str, dropping any not given) into the
     loader kwargs. Panel A uses tidy+cpeptide; Panel B uses aa+demo+cpeptide
     (+arms/arm-subjects); --cohort-id reads the Cohort Browser instead. The
@@ -51,6 +69,8 @@ def _files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id=None):
     m = {"tidy": tidy, "aa": aa, "demo": demo, "cpeptide": cpeptide,
          "arms": arms, "arm_subjects": arm_subjects}
     out = {k: str(v) for k, v in m.items() if v is not None}
+    sql = _sql_text(cohort_sql, cohort_sql_file, "--cohort-sql")
+    target_sql = _sql_text(cohort_target_sql, cohort_target_sql_file, "--cohort-target-sql")
     if cohort_id:
         if any(k != "cpeptide" for k in out):
             raise typer.BadParameter(
@@ -58,10 +78,20 @@ def _files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id=None):
                 "--tidy/--aa/--demo/--arms (only --cpeptide may accompany it, as "
                 "a local target)")
         out["cohort_id"] = cohort_id
+        # the public API's names; cu.cohort_kwargs() renames them to the ones
+        # cohort_data.load_cohort expects (sql / target_sql / profilename).
+        out["cohort_sql"] = sql
+        out["cohort_target_sql"] = target_sql
+        out["cb_profile"] = cb_profile
+        out["max_rows"] = max_rows
     elif not out:
         raise typer.BadParameter(
             "no input given: pass the panel's data files, or --cohort-id to read "
             "a Cohort Browser selection")
+    elif sql or target_sql or max_rows is not None or cb_profile:
+        raise typer.BadParameter(
+            "--cohort-sql / --cohort-target-sql / --max-rows / --cb-profile apply "
+            "only with --cohort-id")
     return out
 
 
@@ -80,6 +110,12 @@ _CPEP = typer.Option(None, "--cpeptide", help="C-peptide AUC target: SDY<n>_cpep
 _ARMS = typer.Option(None, "--arms", help="Panel B treatment arms (optional): SDY<n>_arm_or_cohort.txt")
 _ARMSUBJ = typer.Option(None, "--arm-subjects", help="Panel B arm->subject map (optional): SDY<n>_arm_2_subject.txt")
 _COHORT = typer.Option(None, "--cohort-id", help="CloudOS Cohort Browser cohort id (from the cohort's URL) — reads the cohort instead of files")
+_COHORT_SQL = typer.Option(None, "--cohort-sql", help="Measurement query for --cohort-id: selects person_id, measurement_concept_id, value_as_number (concept_name/domain_id used when present). Run describe-cohort first")
+_COHORT_SQL_FILE = typer.Option(None, "--cohort-sql-file", help="Same as --cohort-sql but read from a .sql file (what a Nextflow process stages)")
+_COHORT_TGT = typer.Option(None, "--cohort-target-sql", help="Query returning person_id and the C-peptide AUC target; or use --cpeptide for a local target file")
+_COHORT_TGT_FILE = typer.Option(None, "--cohort-target-sql-file", help="Same as --cohort-target-sql but read from a .sql file")
+_MAX_ROWS = typer.Option(None, "--max-rows", help="Refuse a cohort query matching more rows than this (query() submits one async task per 1000-row page)")
+_CB_PROFILE = typer.Option("", "--cb-profile", help="cloudos-cb-py credential profile name (default: the configured default profile)")
 _ITER = typer.Option(1, "--iteration", help="Federated round this fit belongs to; stamped on every output")
 _EMIT = typer.Option(False, "--emit-json", help="Also write the JSON exchange payload the aggregator consumes")
 _TRIM = typer.Option(False, "--trim-outliers", help="Drop rows outside the percentile range before fitting (default: keep all)")
@@ -100,11 +136,17 @@ def select_features_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     seed: int = typer.Option(42, help="Random seed"),
 ):
     """Phase 1 (site): LASSO selects features on this site's own data (alpha chosen by CV)."""
     _select_features(site=site, panel=panel, seed=seed,
-                     **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id))
+                     **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile))
 
 
 # ---------------------------------------------------------------- site: Phase 2 (per method)
@@ -120,6 +162,12 @@ def fit_ridge_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     alpha: float = typer.Option(1.0, help="Ridge L2 penalty"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the 95% CIs"),
     seed: int = typer.Option(42, help="Random seed"),
@@ -134,7 +182,7 @@ def fit_ridge_command(
     _fit_ridge(site=site, panel=panel, features=str(features),
                alpha=alpha, n_boot=n_boot, seed=seed, iteration=iteration,
                emit_json=emit_json, trim=_trim(trim_outliers, trim_lower, trim_upper, trim_on),
-               **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id))
+               **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile))
 
 
 @app.command("fit-lasso")
@@ -149,6 +197,12 @@ def fit_lasso_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     alpha: float = typer.Option(0.008, help="LASSO L1 penalty"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the 95% CIs"),
     seed: int = typer.Option(42, help="Random seed"),
@@ -163,7 +217,7 @@ def fit_lasso_command(
     _fit_lasso(site=site, panel=panel, features=str(features),
                alpha=alpha, n_boot=n_boot, seed=seed, iteration=iteration,
                emit_json=emit_json, trim=_trim(trim_outliers, trim_lower, trim_upper, trim_on),
-               **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id))
+               **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile))
 
 
 @app.command("fit-rf")
@@ -178,6 +232,12 @@ def fit_rf_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     n_trees: int = typer.Option(200, help="Random Forest trees"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the 95% CIs"),
     seed: int = typer.Option(42, help="Random seed"),
@@ -192,7 +252,7 @@ def fit_rf_command(
     _fit_rf(site=site, panel=panel, features=str(features),
             n_trees=n_trees, n_boot=n_boot, seed=seed, iteration=iteration,
             emit_json=emit_json, trim=_trim(trim_outliers, trim_lower, trim_upper, trim_on),
-            **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id))
+            **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile))
 
 
 @app.command("fit-logistic")
@@ -207,6 +267,12 @@ def fit_logistic_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     penalty: str = typer.Option("l2", help="l2 (Ridge analogue) or l1 (LASSO analogue)"),
     alpha: float = typer.Option(1.0, help="Penalty strength; the classifier uses C = 1/alpha"),
     responder_threshold: float = typer.Option(
@@ -227,7 +293,7 @@ def fit_logistic_command(
                   penalty=penalty, alpha=alpha, responder_threshold=responder_threshold,
                   n_boot=n_boot, seed=seed, iteration=iteration, emit_json=emit_json,
                   trim=_trim(trim_outliers, trim_lower, trim_upper, trim_on),
-                  **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id))
+                  **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile))
 
 
 @app.command("fit-models")
@@ -242,6 +308,12 @@ def fit_models_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     ridge_alpha: float = typer.Option(1.0, help="Ridge L2 penalty"),
     lasso_alpha: float = typer.Option(0.008, help="LASSO L1 penalty"),
     n_trees: int = typer.Option(200, help="Random Forest trees"),
@@ -264,7 +336,7 @@ def fit_models_command(
                 with_logistic=with_logistic, responder_threshold=responder_threshold,
                 n_boot=n_boot, seed=seed, iteration=iteration, emit_json=emit_json,
                 trim=_trim(trim_outliers, trim_lower, trim_upper, trim_on),
-                **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id))
+                **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile))
 
 
 # ---------------------------------------------------------------- site: Phase 3
@@ -282,6 +354,12 @@ def apply_coefficients_command(
     arms: Optional[Path] = _ARMS,
     arm_subjects: Optional[Path] = _ARMSUBJ,
     cohort_id: Optional[str] = _COHORT,
+    cohort_sql: Optional[str] = _COHORT_SQL,
+    cohort_sql_file: Optional[Path] = _COHORT_SQL_FILE,
+    cohort_target_sql: Optional[str] = _COHORT_TGT,
+    cohort_target_sql_file: Optional[Path] = _COHORT_TGT_FILE,
+    max_rows: Optional[int] = _MAX_ROWS,
+    cb_profile: str = _CB_PROFILE,
     ridge_alpha: float = typer.Option(1.0, help="Ridge L2 penalty for the solo model"),
     lasso_alpha: float = typer.Option(0.008, help="LASSO L1 penalty for the solo model"),
     n_boot: int = typer.Option(2000, help="Bootstrap resamples for the 95% CIs"),
@@ -294,7 +372,7 @@ def apply_coefficients_command(
         lasso_vector=str(lasso_vector) if lasso_vector else None,
         rf_union=str(rf_union) if rf_union else None,
         ridge_alpha=ridge_alpha, lasso_alpha=lasso_alpha, n_boot=n_boot, seed=seed,
-        **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id),
+        **_files(tidy, aa, demo, cpeptide, arms, arm_subjects, cohort_id, cohort_sql, cohort_sql_file, cohort_target_sql, cohort_target_sql_file, max_rows, cb_profile),
     )
 
 
@@ -319,6 +397,22 @@ def aggregate_vectors_command(
 ):
     """Phase 2 (aggregator): combine the site results. JSON in -> one federated JSON per algorithm."""
     _aggregate_vectors(vectors=[str(f) for f in vector], method=method, iteration=iteration)
+
+
+# ------------------------------------------------------- site: Phase 0 (discovery)
+@app.command("describe-cohort")
+def describe_cohort_command(
+    cohort_id: str = typer.Option(..., "--cohort-id", help="CloudOS Cohort Browser cohort id (from the cohort's URL)"),
+    cb_profile: str = _CB_PROFILE,
+):
+    """Phase 0 (site): print a cohort's schemas, tables and columns.
+
+    Run this before writing any --cohort-sql. There is no list-cohorts call and no
+    way to discover a cohort's shape offline, so this is how you find out which
+    tables, concept ids and value columns the query has to select.
+    """
+    from .cohort_data import describe_cohort as _describe_cohort
+    _describe_cohort(cohort_id, profilename=cb_profile)
 
 
 def main():
